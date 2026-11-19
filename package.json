@@ -1,7 +1,7 @@
 {
   "name": "@naturalth2012/three-body-atlas",
   "version": "1.0.0",
-  "description": "三体宇宙全景：三部曲剧情脉络、60 位人物的关系图谱、可运行的三个恒星模拟与黑暗森林推演、三体游戏关卡、纪元时间线、技术造物、术语名句、改编差异与多角度议题，侧边栏面板与 7 个对话工具共用一套数据。",
+  "description": "三体宇宙全景：三部曲剧情脉络、56 位人物与 247 条关系图谱、纪元时间线、技术造物、三体游戏关卡、术语名句、改编差异与多角度议题，并内置一个可运行的三体引力模拟（自适应子步积分、三日凌空/潮汐撕裂等灾变判定、文明代数推演）；侧边栏面板与 8 个对话工具共用同一套数据。",
   "type": "module",
   "license": "MIT",
   "author": "naturalth2012",
@@ -67,5 +67,16 @@
         "@deepseek-ai/dsh-client-ui-conversation"
       ]
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/naturalth2012/three-body-atlas.git"
+  },
+  "bugs": {
+    "url": "https://github.com/naturalth2012/three-body-atlas/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   }
 }
