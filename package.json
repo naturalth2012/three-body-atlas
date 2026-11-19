@@ -54,7 +54,8 @@
     "scripts/probe.mjs",
     "docs/SCHEMA.md",
     "LICENSE",
-    ".gitignore"
+    ".gitignore",
+    "docs/PUBLISHING.md"
   ],
   "dsh": {
     "bundle": {
