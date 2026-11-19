@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+# Build and pack output
+*.tgz
+dist/
+build/
+
+# Local tooling and editor state
+.vscode/
+.idea/
+*.log
+npm-debug.log*
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local scratch files
+.tmp/
+*.local

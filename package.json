@@ -1,0 +1,71 @@
+{
+  "name": "@naturalth2012/three-body-atlas",
+  "version": "1.0.0",
+  "description": "三体宇宙全景：三部曲剧情脉络、60 位人物的关系图谱、可运行的三个恒星模拟与黑暗森林推演、三体游戏关卡、纪元时间线、技术造物、术语名句、改编差异与多角度议题，侧边栏面板与 7 个对话工具共用一套数据。",
+  "type": "module",
+  "license": "MIT",
+  "author": "naturalth2012",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "three-body",
+    "三体",
+    "liu-cixin",
+    "dark-forest",
+    "knowledge-graph",
+    "simulation",
+    "science-fiction"
+  ],
+  "homepage": "https://github.com/naturalth2012/three-body-atlas#readme",
+  "engines": {
+    "dsh": ">=0.2.2-rc.1"
+  },
+  "scripts": {
+    "test": "node scripts/selfcheck.mjs",
+    "probe": "node scripts/probe.mjs"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./engine": "./engine.js",
+    "./sim": "./sim.js",
+    "./data": "./data/index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "engine.js",
+    "sim.js",
+    "data/index.js",
+    "data/characters.js",
+    "data/works.js",
+    "data/timeline.js",
+    "data/plot.js",
+    "data/lore.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "docs",
+    "icon.svg",
+    "README.md",
+    "scripts/selfcheck.mjs",
+    "scripts/probe.mjs",
+    "docs/SCHEMA.md",
+    "LICENSE",
+    ".gitignore"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}

@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="300" viewBox="0 0 640 300" role="img" aria-label="Three suns orbiting a planet, with the derived stable and chaotic era strip">
+  <defs>
+    <radialGradient id="bg" cx="0.5" cy="0.42" r="0.78">
+      <stop offset="0" stop-color="#16233a"/>
+      <stop offset="0.6" stop-color="#0b1018"/>
+      <stop offset="1" stop-color="#05070b"/>
+    </radialGradient>
+    <radialGradient id="sun1" cx="0.36" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#ffe9a8"/>
+      <stop offset="0.5" stop-color="#f2b73f"/>
+      <stop offset="1" stop-color="#9c5f18"/>
+    </radialGradient>
+    <radialGradient id="sun2" cx="0.36" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#ffd3a0"/>
+      <stop offset="0.5" stop-color="#eb8f3c"/>
+      <stop offset="1" stop-color="#8d3f16"/>
+    </radialGradient>
+    <radialGradient id="sun3" cx="0.36" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#f7b8a6"/>
+      <stop offset="0.5" stop-color="#e0563b"/>
+      <stop offset="1" stop-color="#7c2314"/>
+    </radialGradient>
+    <radialGradient id="planet" cx="0.34" cy="0.3" r="0.88">
+      <stop offset="0" stop-color="#9fe0f0"/>
+      <stop offset="1" stop-color="#1d4a60"/>
+    </radialGradient>
+    <linearGradient id="stable" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8fd6a6"/>
+      <stop offset="1" stop-color="#459a63"/>
+    </linearGradient>
+    <linearGradient id="chaotic" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e8a06a"/>
+      <stop offset="1" stop-color="#b84a33"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="640" height="300" fill="url(#bg)"/>
+
+  <g fill="#c9d6e6" opacity="0.28">
+    <circle cx="46" cy="38" r="0.9"/>
+    <circle cx="118" cy="92" r="1.2"/>
+    <circle cx="182" cy="30" r="0.7"/>
+    <circle cx="252" cy="66" r="1"/>
+    <circle cx="330" cy="26" r="0.8"/>
+    <circle cx="404" cy="58" r="1.1"/>
+    <circle cx="470" cy="34" r="0.7"/>
+    <circle cx="536" cy="76" r="1"/>
+    <circle cx="596" cy="40" r="0.8"/>
+    <circle cx="88" cy="152" r="0.8"/>
+    <circle cx="560" cy="150" r="0.9"/>
+    <circle cx="208" cy="176" r="0.7"/>
+    <circle cx="432" cy="182" r="0.8"/>
+  </g>
+
+  <!-- three suns and their orbits -->
+  <ellipse cx="320" cy="112" rx="176" ry="70" fill="none" stroke="#5d7c9c" stroke-width="0.9" stroke-opacity="0.38"/>
+  <ellipse cx="320" cy="112" rx="122" ry="96" fill="none" stroke="#5d7c9c" stroke-width="0.7" stroke-opacity="0.22" transform="rotate(-16 320 112)"/>
+
+  <circle cx="152" cy="86" r="26" fill="url(#sun1)"/>
+  <circle cx="152" cy="86" r="40" fill="#f2b73f" opacity="0.1"/>
+  <circle cx="452" cy="140" r="18" fill="url(#sun2)"/>
+  <circle cx="452" cy="140" r="29" fill="#eb8f3c" opacity="0.1"/>
+  <circle cx="336" cy="42" r="13" fill="url(#sun3)"/>
+  <circle cx="336" cy="42" r="22" fill="#e0563b" opacity="0.1"/>
+
+  <!-- planet with a trail -->
+  <path d="M228 214 C 268 190, 300 205, 320 226 C 346 252, 386 244, 412 218" fill="none" stroke="#6fc3d9" stroke-width="1.2" stroke-opacity="0.4" stroke-dasharray="3 4"/>
+  <circle cx="412" cy="218" r="11" fill="url(#planet)"/>
+  <ellipse cx="412" cy="218" rx="18" ry="5" fill="none" stroke="#9fd3e6" stroke-width="1" stroke-opacity="0.5"/>
+
+  <!-- derived calendar strip: the derived eras, shown as a bar -->
+  <rect x="34" y="252" width="572" height="22" rx="5" fill="#0a1119" stroke="#274155" stroke-width="1"/>
+  <rect x="35" y="253" width="96" height="20" rx="4" fill="url(#stable)"/>
+  <rect x="131" y="253" width="58" height="20" fill="url(#chaotic)"/>
+  <rect x="189" y="253" width="142" height="20" fill="url(#stable)"/>
+  <rect x="331" y="253" width="44" height="20" fill="url(#chaotic)"/>
+  <rect x="375" y="253" width="110" height="20" fill="url(#stable)"/>
+  <rect x="485" y="253" width="120" height="20" rx="4" fill="url(#chaotic)"/>
+
+  <g>
+    <rect x="34" y="228" width="14" height="3" rx="1.5" fill="#459a63"/>
+    <rect x="54" y="228" width="14" height="3" rx="1.5" fill="#b84a33"/>
+  </g>
+</svg>

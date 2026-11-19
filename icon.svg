@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="36" height="36" role="img" aria-label="Three-Body Universe">
+  <defs>
+    <radialGradient id="tba-sun" cx="0.36" cy="0.3" r="0.78">
+      <stop offset="0" stop-color="#ffe9a8"/>
+      <stop offset="0.45" stop-color="#f2b73f"/>
+      <stop offset="1" stop-color="#a4641a"/>
+    </radialGradient>
+    <radialGradient id="tba-sun2" cx="0.4" cy="0.32" r="0.8">
+      <stop offset="0" stop-color="#ffcf9a"/>
+      <stop offset="1" stop-color="#b8501f"/>
+    </radialGradient>
+    <radialGradient id="tba-planet" cx="0.34" cy="0.3" r="0.85">
+      <stop offset="0" stop-color="#8fd8ec"/>
+      <stop offset="1" stop-color="#20536b"/>
+    </radialGradient>
+  </defs>
+  <circle cx="18" cy="18" r="16.4" fill="#0a0f18"/>
+  <circle cx="8.6" cy="9" r="5.1" fill="url(#tba-sun)"/>
+  <circle cx="27.4" cy="11.6" r="3.7" fill="url(#tba-sun2)"/>
+  <circle cx="20.6" cy="27.8" r="3" fill="url(#tba-sun)"/>
+  <ellipse cx="18" cy="18" rx="15.2" ry="6.2" fill="none" stroke="#6f8fae" stroke-width="0.75" stroke-opacity="0.5"/>
+  <circle cx="18" cy="18" r="4.6" fill="url(#tba-planet)"/>
+  <ellipse cx="18" cy="18" rx="7.4" ry="2.3" fill="none" stroke="#9fd3e6" stroke-width="0.9" stroke-opacity="0.65"/>
+  <circle cx="16.1" cy="16.2" r="1.1" fill="#bfeaf7" opacity="0.75"/>
+</svg>
