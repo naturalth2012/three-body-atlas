@@ -538,6 +538,12 @@ assert(JSON.stringify(toolNames) === JSON.stringify(expectedTools), `注册的�
   }
   assert(zh.meta.detail && en.meta.detail, '两种语言都声明了详情文档')
 
+  // package.json's description is the npm-facing claim and is what a reviewer
+  // reads against the code, so it must not drift behind the shipped tools.
+  const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  const pkgCount = Number((pkg.description.match(/(\d+) 个对话工具/) || [])[1])
+  assert(pkgCount === expectedTools.length, `package.json 描述声明的工具数与实际一致（${pkgCount}）`)
+
   // A detail document must be exactly one image line, per the plugin-details spec.
   for (const rel of [zh.meta.detail, en.meta.detail]) {
     const doc = fs.readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8').trim()
