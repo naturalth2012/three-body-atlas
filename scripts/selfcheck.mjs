@@ -867,8 +867,14 @@ if (fs.existsSync(iconPath)) {
 // One-file market submission, with the fields the current spec actually accepts.
 const entryPath = path.join(root, 'market-entry.yml')
 assert(fs.existsSync(entryPath), '市场投稿的 YAML 文件已准备')
-if (fs.existsSync(entryPath)) {
+// The submission file itself lives where the index repo expects it:
+// data/plugins/<owner>__<repo>.yml, the exact name slugFor(url) derives.
+const submitPath = path.join(root, 'data', 'plugins', 'naturalth2012__three-body-atlas.yml')
+assert(fs.existsSync(submitPath), 'data/plugins/ 下已有可直接复制的投稿条目')
+if (fs.existsSync(entryPath) && fs.existsSync(submitPath)) {
   const entry = fs.readFileSync(entryPath, 'utf8')
+  const submit = fs.readFileSync(submitPath, 'utf8')
+  assert(entry === submit, '投稿条目与 market-entry.yml 内容一致')
   assert(/^url: https:\/\/github\.com\/naturalth2012\/three-body-atlas$/m.test(entry),
     '投稿 url 与仓库一致')
   assert(/^category: fun$/m.test(entry), '投稿分类为 fun')

@@ -8,22 +8,24 @@
 
 | 项目 | 状态 |
 |---|---|
-| 代码与数据 | ✅ 完成，`node scripts/selfcheck.mjs` 434 项通过 |
+| 代码与数据 | ✅ 完成，`node scripts/selfcheck.mjs` 565 项通过 |
 | 包规范 | ✅ 包名、license、author、keywords、engines、repository、publishConfig 就位 |
 | `private` 字段 | ✅ 无（否则 npm 会拒绝发布） |
 | LICENSE | ✅ MIT + 著作权与来源说明 |
 | `.gitignore` | ✅ 已就位 |
-| npm 打包预检 | ✅ 24 个文件 / 183 KB，解包后自检仍全过 |
+| npm 打包预检 | ✅ 29 个文件 / 250 KB，解包后自检仍全过 |
 | GitHub 仓库 | ✅ 已推送 https://github.com/naturalth2012/three-body-atlas |
-| npm 登录 | ⬜ **需要你执行**（当前 `npm whoami` 报 ENEEDAUTH） |
-| npm 发布 | ⬜ 待你执行 |
-| 市场收录 | ⬜ 待你提交 |
+| 市场投稿文件 | ✅ [`data/plugins/naturalth2012__three-body-atlas.yml`](../data/plugins/naturalth2012__three-body-atlas.yml) 已就绪 |
+| npm 登录 | ⬜ 可选，见下 |
+| npm 发布 | ⬜ 可选，见下 |
+| 市场收录 | ⬜ 需要你向索引仓库提 PR |
 
 ---
 
-## 一、发布到 npm
+## 一、发布到 npm（可选，不影响市场收录）
 
-市场的条目读取 npm 上的包，所以这一步是进市场的前提。
+**npm 不是进市场的前提。** 目录里有大量纯 GitHub 发行的条目；收录只看索引仓库的 PR 与
+`dsh.bundle` 探测。发布 npm 的唯一收益是详情页显示 npm 下载量。想发布再读这一节：
 
 **你的 npm 当前未登录，且 registry 指向国内镜像**（`registry.npmmirror.com`）。发布必须走官方源：
 
@@ -52,8 +54,8 @@ npm publish --registry=https://registry.npmjs.org
 - 发布前可再自查一次：
 
   ```bash
-  node scripts/selfcheck.mjs    # 434 项
-  npm pack --dry-run            # 确认只含预期的 24 个文件
+  node scripts/selfcheck.mjs    # 565 项
+  npm pack --dry-run            # 确认只含预期的 29 个文件
   ```
 
 - 如果你的 npm 账号名不是 `naturalth2012`，需要同步改 `package.json` 的
@@ -79,7 +81,8 @@ npm publish --registry=https://registry.npmjs.org
    gh repo edit naturalth2012/three-body-atlas --add-topic dsh-plugin
    ```
 
-2. Fork 索引仓库，在 `data/plugins/naturalth2012__three-body-atlas.yml` 放入 `market-entry.yml` 的内容，开 PR。
+2. Fork 索引仓库，把 [`data/plugins/naturalth2012__three-body-atlas.yml`](../data/plugins/naturalth2012__three-body-atlas.yml)
+   原样放进你的 fork 的**同一路径**（内容与根目录 [`market-entry.yml`](../market-entry.yml) 一致），开 PR。
    两个 README 由脚本生成，**不要手工编辑**。
 3. 本地可预览（可选）：`npm ci && node scripts/generate-readme.mjs`。
 4. 一个 PR 最多 3 条；本插件只加 1 条。CI 会检查 `dsh.bundle` manifest（本仓库已声明）、
