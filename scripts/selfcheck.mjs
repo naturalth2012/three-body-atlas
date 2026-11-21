@@ -563,6 +563,50 @@ for (const [routePath, handler] of handlers) {
   }
 }
 
+console.log('\n## 发布与市场投稿准备')
+
+// Copyright hygiene: every quote states whether it is verbatim.
+const quotes = D.QUOTES || []
+assert(quotes.length > 0, `收录 ${quotes.length} 条短引文`)
+assert(quotes.every((q) => typeof q.verbatim === 'boolean'),
+  '每条引文都有 verbatim 标记（逐字 / 大意）')
+assert(quotes.filter((q) => q.verbatim === false).length >= 5,
+  `明确标注为大意转述的引文 ${quotes.filter((q) => q.verbatim === false).length} 条`)
+assert(quotes.every((q) => String(q.text || '').length <= 30), '引文均为短句，不构成文本数据集')
+assert(fs.existsSync(path.join(root, 'docs', 'PROVENANCE.md')), '有独立的数据来源与引文说明文档')
+
+// The market requires a GitHub-hosted raster icon; SVG is rejected by its
+// validator. A plain re-encoding check avoids pulling in image libraries.
+const iconPath = path.join(root, 'assets', 'icon-180.png')
+assert(fs.existsSync(iconPath), '市场用的 PNG 图标存在')
+if (fs.existsSync(iconPath)) {
+  const bytes = fs.readFileSync(iconPath)
+  assert(bytes.length > 8 && bytes[0] === 0x89 && bytes.subarray(1, 4).toString('ascii') === 'PNG',
+    'PNG 图标的字节签名有效')
+  const width = bytes.readUInt32BE(16)
+  const height = bytes.readUInt32BE(20)
+  assert(width === 180 && height === 180, `图标为方形位图 ${width}×${height}`)
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
+  assert((pkg.files || []).includes('assets/icon-180.png'), 'PNG 图标在 files 列表里')
+  assert((pkg.files || []).includes('docs/PROVENANCE.md'), '引文说明在 files 列表里')
+}
+
+// One-file market submission, with the fields the current spec actually accepts.
+const entryPath = path.join(root, 'market-entry.yml')
+assert(fs.existsSync(entryPath), '市场投稿的 YAML 文件已准备')
+if (fs.existsSync(entryPath)) {
+  const entry = fs.readFileSync(entryPath, 'utf8')
+  assert(/^url: https:\/\/github\.com\/naturalth2012\/three-body-atlas$/m.test(entry),
+    '投稿 url 与仓库一致')
+  assert(/^category: fun$/m.test(entry), '投稿分类为 fun')
+  assert(/^  en: '.*\.'$/m.test(entry), '英文说明是一行、加引号且以句号结尾')
+  assert(/^  zh: '.*。'$/m.test(entry), '中文说明是一行、加引号且以句号结尾')
+  assert(!/^npm:|^capabilities:|^install:/m.test(entry),
+    '投稿不含当前规范拒绝的 npm/capabilities/install 字段')
+  assert(/^icon: https:\/\/raw\.githubusercontent\.com\/[^ ]+\.png\s*$/m.test(entry),
+    '图标是 GitHub 托管的 PNG 链接')
+}
+
 console.log('\n## Client 静态检查')
 const client = fs.readFileSync(path.join(root, 'client.js'), 'utf8')
 assert(client.includes("window.__ModuleLoader__.load({"), 'client.js 通过 __ModuleLoader__ 注册')

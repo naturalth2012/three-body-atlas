@@ -930,7 +930,7 @@ export const GLOSSARY = [
  * ------------------------------------------------------------------- */
 export const QUOTES = [
   {
-    id: 'do-not-answer',
+    id: 'do-not-answer', verbatim: true,
     text: '不要回答！不要回答！不要回答！',
     textEn: 'Do not answer! Do not answer! Do not answer!',
     speaker: 'listener-1379',
@@ -939,7 +939,7 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'come-here',
+    id: 'come-here', verbatim: true,
     text: '到这里来吧，我将帮助你们获得这个世界。',
     textEn: 'Come here, I will help you take this world.',
     speaker: 'ye-wenjie',
@@ -948,7 +948,7 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'our-civilization-cannot-solve',
+    id: 'our-civilization-cannot-solve', verbatim: true,
     text: '我的文明已无力解决自己的问题，需要你们的帮助。',
     speaker: 'trisolaris-lord',
     context: '三体世界对叶文洁的回复。一个濒死文明第一次向另一个世界求援。',
@@ -956,7 +956,7 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'universe-will-flicker',
+    id: 'universe-will-flicker', verbatim: true,
     text: '整个宇宙将为你闪烁。',
     speaker: 'shen-yufei',
     context: '申玉菲向汪淼暗示，他看到的宇宙背景辐射闪烁并非幻觉，而是智子的宣告。',
@@ -964,7 +964,7 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'lord-does-not-care',
+    id: 'lord-does-not-care', verbatim: true,
     text: '主不在乎。',
     speaker: 'pan-han',
     context: '潘寒面对人类的反抗与挣扎时给出的回答：在主眼里人类不值一提。',
@@ -972,7 +972,7 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'down-with-human-tyranny',
+    id: 'down-with-human-tyranny', verbatim: true,
     text: '消灭人类暴政，世界属于三体！',
     textEn: 'Eliminate human tyranny! The world belongs to Trisolaris!',
     speaker: 'narrator',
@@ -981,7 +981,7 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'shi-qiang-ghost',
+    id: 'shi-qiang-ghost', verbatim: true,
     text: '邪乎到家必有鬼。',
     speaker: 'shi-qiang',
     context: '史强查案时的口头禅：越是解释不通的怪事，背后越有人在动手。剧集保留了这句台词。',
@@ -989,7 +989,7 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'human-sunset',
+    id: 'human-sunset', verbatim: true,
     text: '这是人类的落日。',
     speaker: 'ye-wenjie',
     context: '晚年的叶文洁回到雷达峰，看着夕阳说出这句话，像一句预言也像一句忏悔。',
@@ -997,7 +997,7 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'you-are-bugs',
+    id: 'you-are-bugs', verbatim: true,
     text: '你们是虫子。',
     speaker: 'sophon',
     context: '智子向全人类展示三体世界的态度：在这个宇宙里，人类只是虫子。',
@@ -1005,15 +1005,14 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'bugs-never-lose',
+    id: 'bugs-never-lose', verbatim: true,
     text: '虫子从来就没有被真正战胜过。',
     speaker: 'shi-qiang',
     context: '史强带汪淼去看漫天遍野的蝗虫，用一句大白话把人类的绝望顶了回去。',
     work: 'three-body',
     canon: '原著'
   },
-  {
-    id: 'physics-does-not-exist',
+  { id: 'physics-does-not-exist', verbatim: false,
     text: '物理学不存在了。',
     speaker: 'sophon',
     context: '智子对地球科学界的宣告。大意概括自原著中科学家们的集体绝望。',
@@ -1021,7 +1020,7 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'dark-forest-hunter',
+    id: 'dark-forest-hunter', verbatim: true,
     text: '宇宙就是一座黑暗森林，每个文明都是带枪的猎人。',
     textEn: 'The universe is a dark forest, and every civilization is a hunter with a gun.',
     speaker: 'luo-ji',
@@ -1030,7 +1029,7 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'speak-to-trisolaris',
+    id: 'speak-to-trisolaris', verbatim: true,
     text: '我要对三体世界说话。',
     speaker: 'luo-ji',
     context: '罗辑以执剑人的身份回到零号基地，向三体世界发出最后通牒，威慑在此刻成立。',
@@ -1038,15 +1037,14 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'your-wallbreaker',
+    id: 'your-wallbreaker', verbatim: true,
     text: '面壁者罗辑，我是你的破壁人。',
     speaker: 'sophon',
     context: '三位面壁者相继被破壁后，三体世界亲自出面，承认罗辑没有破壁人。',
     work: 'dark-forest',
     canon: '原著'
   },
-  {
-    id: 'broadcast-coordinates',
+  { id: 'broadcast-coordinates', verbatim: false,
     text: '现在，我将向宇宙广播三体世界的坐标。',
     speaker: 'luo-ji',
     context: '罗辑对决三体世界的台词，大意概括自原著中他按下威慑开关的场景。',
@@ -1054,7 +1052,7 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'natural-selection-ahead',
+    id: 'natural-selection-ahead', verbatim: true,
     text: '自然选择，前进四！',
     speaker: 'zhang-beihai',
     context: '章北海夺取「自然选择」号控制权后下达的命令，人类逃亡就此开始。',
@@ -1062,7 +1060,7 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'give-years-civilization',
+    id: 'give-years-civilization', verbatim: true,
     text: '给岁月以文明，而不是给文明以岁月。',
     textEn: 'Give years to civilization, not civilization to years.',
     speaker: 'narrator',
@@ -1071,7 +1069,7 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'weakness-and-ignorance',
+    id: 'weakness-and-ignorance', verbatim: true,
     text: '弱小和无知不是生存的障碍，傲慢才是。',
     speaker: 'narrator',
     context: '《死神永生》中对人类一次次错判的总结，也是全书最冷的一句判词。',
@@ -1079,7 +1077,7 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'lose-humanity',
+    id: 'lose-humanity', verbatim: true,
     text: '失去人性，失去很多；失去兽性，失去一切。',
     speaker: 'wade',
     context: '维德对程心说的话，为星环城与光速飞船之争定下基调，也成为全书最锋利的伦理判词。',
@@ -1087,7 +1085,7 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'advance-advance',
+    id: 'advance-advance', verbatim: true,
     text: '前进！前进！不择手段地前进！',
     speaker: 'wade',
     context: '维德在星环城动员时的名言，把「手段」与「目标」的伦理彻底摊开在人类面前。',
@@ -1095,7 +1093,7 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'only-the-brain',
+    id: 'only-the-brain', verbatim: true,
     text: '只送大脑。',
     speaker: 'wade',
     context: '阶梯计划讨论中，维德提出把云天明的大脑单独送入太空，全场愕然。',
@@ -1103,15 +1101,14 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'destroy-you-none-of-your-business',
+    id: 'destroy-you-none-of-your-business', verbatim: true,
     text: '毁灭你，与你何干？',
     speaker: 'singer',
     context: '歌者决定清理太阳系时的心声：对猎手而言，猎物没有申辩的资格。',
     work: 'deaths-end',
     canon: '原著'
   },
-  {
-    id: 'i-destroy-you',
+  { id: 'i-destroy-you', verbatim: false,
     text: '清理员在数据库里查到一个坐标，就像在账本上划掉一行。',
     speaker: 'singer',
     context: '歌者投出二向箔前的工作流程描写。此句为叙述概括，非逐字原文。',
@@ -1119,7 +1116,7 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'one-dual-vector-foil',
+    id: 'one-dual-vector-foil', verbatim: true,
     text: '给我一片二向箔，清理用。',
     speaker: 'singer',
     context: '歌者向长老申请清理工具，太阳系的死刑就这样被一句日常对话批准。',
@@ -1127,31 +1124,28 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'carve-in-stone',
+    id: 'carve-in-stone', verbatim: true,
     text: '把字刻在石头上。',
     speaker: 'luo-ji',
     context: '冥王星博物馆里，罗辑对程心谈如何保存文明：越古老的办法越可靠。',
     work: 'deaths-end',
     canon: '原著'
   },
-  {
-    id: 'love-not-your-business',
+  { id: 'love-not-your-business', verbatim: false,
     text: '我爱你，与你有何相干。',
     speaker: 'narrator',
     context: '《死神永生》中关于爱与个体选择的评述，广为流传的转述句，措辞为大意。',
     work: 'deaths-end',
     canon: '原著'
   },
-  {
-    id: 'child-too-early',
+  { id: 'child-too-early', verbatim: false,
     text: '孩子，你不该这么早见到这些。',
     speaker: 'narrator',
     context: '长者对年轻幸存者的感叹，大意概括自掩体纪元人类目睹末日时的场景。',
     work: 'deaths-end',
     canon: '原著'
   },
-  {
-    id: 'never-mind-all-the-same',
+  { id: 'never-mind-all-the-same', verbatim: false,
     text: '没关系，都一样。',
     speaker: 'narrator',
     context: '面对文明的所有选择与结局时的一句评述，措辞为大意，非逐字原文。',
@@ -1159,7 +1153,7 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'pastoral-age',
+    id: 'pastoral-age', verbatim: true,
     text: '宇宙曾经有过一个田园时代。',
     speaker: 'guan-yifan',
     context: '关一帆在 DX3906 向程心讲述宇宙的过去：高维、光速无限、文明稀少。',
@@ -1167,7 +1161,7 @@ export const QUOTES = [
     canon: '原著'
   },
   {
-    id: 'give-years-to-civilization',
+    id: 'give-years-to-civilization', verbatim: true,
     text: '给岁月以文明。',
     speaker: 'narrator',
     context: '大低谷后重建城市里的标语简写，完整版本见「给岁月以文明，而不是给文明以岁月」。',

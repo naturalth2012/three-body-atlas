@@ -55,7 +55,10 @@
     "docs/SCHEMA.md",
     "LICENSE",
     ".gitignore",
-    "docs/PUBLISHING.md"
+    "docs/PUBLISHING.md",
+    "assets/icon-180.png",
+    "docs/PROVENANCE.md",
+    "market-entry.yml"
   ],
   "dsh": {
     "bundle": {

@@ -63,61 +63,55 @@ npm publish --registry=https://registry.npmjs.org
 
 ## 二、提交到 DSH 市场（Discover）
 
-市场不接收"上传"，而是读一份公开目录索引：
+索引仓库：<https://github.com/awesome-dsh-plugin/awesome-dsh-plugin>；
+网页目录：<https://awesome-dsh-plugin.com>。**不要**给 `dsh-plugin-catalog` 开 PR——它是自动生成的。
 
-- 索引仓库：<https://github.com/awesome-dsh-plugin/awesome-dsh-plugin>
-- 网页目录：<https://awesome-dsh-plugin.com>
-- 客户端从 npm 包 `dsh-plugin-catalog`（内含 `plugins.json` / `index.json`）或官网读取
+按现行贡献规范，投稿就是**一个文件**：`data/plugins/naturalth2012__three-body-atlas.yml`。
+本仓库已准备好可直接复制的内容：[`market-entry.yml`](../market-entry.yml)。
+注意新版规范**不接受** `npm:` / `capabilities:` / `install:` 字段（手写 `npm:` 会被校验拒绝），
+图标必须是 GitHub 托管的**位图**：本仓库已生成 `assets/icon-180.png`（180×180 有效 PNG）。
 
-`dsh-plugin-catalog` 的 README 写明 **"Published automatically; do not open pull requests here"**，
-所以**不要**给 catalog 开 PR；正确做法是到 `awesome-dsh-plugin/awesome-dsh-plugin`
-主仓库按其贡献说明提交条目（通常是一个 YAML/JSON 条目或 issue 表单）。
+提交步骤：
 
-建议填写的字段：
+1. 为仓库添加 topic `dsh-plugin`（CI 会检查）：
+
+   ```bash
+   gh repo edit naturalth2012/three-body-atlas --add-topic dsh-plugin
+   ```
+
+2. Fork 索引仓库，在 `data/plugins/naturalth2012__three-body-atlas.yml` 放入 `market-entry.yml` 的内容，开 PR。
+   两个 README 由脚本生成，**不要手工编辑**。
+3. 本地可预览（可选）：`npm ci && node scripts/generate-readme.mjs`。
+4. 一个 PR 最多 3 条；本插件只加 1 条。CI 会检查 `dsh.bundle` manifest（本仓库已声明）、
+   仓库满 1 天（已满足）、YAML 格式与站点构建。
+
+`market-entry.yml` 中的字段：
 
 | 字段 | 值 |
 |---|---|
-| `name` | `three-body-atlas` |
-| `owner` | `naturalth2012` |
 | `url` | `https://github.com/naturalth2012/three-body-atlas` |
-| `npm` | `@naturalth2012/three-body-atlas` |
-| `category` | `fun`（娱乐）或 `docs`（知识库；本插件偏前者偏重模拟） |
-| `install` | `dsh plugin --profile web add @naturalth2012/three-body-atlas` |
-| `icon` | `https://raw.githubusercontent.com/naturalth2012/three-body-atlas/main/icon.svg` |
-| `capabilities` | 只需 `network`（注册同源路由，不发起外部请求；审核若认为是误报可去掉） |
+| `name` | `naturalth2012/three-body-atlas` |
+| `category` | `fun` |
+| `description.en` | 见文件（一行、句号结尾、无 `: ` 冒号空间） |
+| `description.zh` | 见文件（可选，但已写好） |
+| `icon` | `https://raw.githubusercontent.com/naturalth2012/three-body-atlas/main/assets/icon-180.png` |
 
-**英文简介**：
-
-> The Three-Body trilogy as an explorable atlas: 56 characters with 247 curated
-> relations, 52 events across 10 eras, 24 technologies, the in-novel game, and 8
-> multi-angle themes. Ships a real three-body gravity simulation with adaptive
-> sub-stepping, catastrophe detection (three-sun alignment, tidal disruption,
-> ejection), a derived 恒纪元/乱纪元 calendar, civilization-generation
-> accounting, phase portraits and an energy-conservation diagnostic. One sidebar
-> panel and eight agent tools share the same dataset.
-
-**中文简介**：
-
-> 把《三体》三部曲整理成可探索的图鉴：56 位人物与 247 条关系、10 个纪元的 52 个事件、
-> 24 件技术、原著里的三体游戏关卡、8 个多角度议题。并内置一个真正会跑的三体引力模拟：
-> 自适应子步积分、三日凌空/潮汐撕裂/飞散等灾变判定、由辐射通量推出的恒纪元/乱纪元历法、
-> 文明代数推演、相位图与能量守恒诊断。侧边栏面板与 8 个对话工具共用同一套数据。
+npm 包是**可选**的：不影响收录；发布后映射自动从 registry 采集，条目里无需任何字段。
+但已发布包的 `repository` 必须指回这个仓库（本仓库 `package.json` 已正确设置）。
 
 ---
 
 ## 三、审核可能关注的点（请如实知悉）
 
 1. **数据未经在线核对**。构建环境联网检索不可用，数据基于广为人知的作品常识人工整理。
-   每条记录都标注了来源层级（原著 / 腾讯剧集 / Netflix 改编 / 动画改编），但**没有逐条比对原书**。
-   若审核要求事实准确性背书，需如实说明，后续可逐条校订。
-2. **版权**。代码为 MIT。数据是原创编写的整理性说明，不复制原作段落；但三体宇宙的角色名、
-   术语与台词版权归刘慈欣及权利方所有。`LICENSE` 已写明这是非官方、非商业的参考项目。
-   市场若对 IP 敏感，`data/lore.js` 的 `QUOTES`（30 句台词）是最可能被要求处理的部分——
-   其中 6 句已在 `context` 里标注为「大意/概括」而非逐字引用。
-3. **`capabilities`**。本插件不发外部网络请求，也不读写工作区文件；只注册同源 HTTP 路由与 8 个工具。
-   填 `network` 是保守起见。
-4. **`engines.dsh`**。声明为 `>=0.2.2-rc.1`，与当前安装版本对齐。若目标市场版本区间不同需要调整，
-   否则会被版本门槛拦住。
+   每条记录都标注了来源层级，但**没有逐条比对原书**。若审核问及事实准确性，请如实说明。
+   详见 [`docs/PROVENANCE.md`](PROVENANCE.md)。
+2. **版权**。代码为 MIT。数据是原创整理的摘要，不复制原作段落；角色名、术语与台词版权归刘慈欣及权利方。
+   `LICENSE` 已写明非官方、非商业性质。`docs/PROVENANCE.md` 说明 30 句短台词的逐字性：
+   24 条标 `verbatim: true`，6 条明确标 `verbatim: false`（大意转述）。
+   若权利方敏感，可把 `QUOTES` 置空——引擎、路由、工具与面板都不依赖台词数量。
+3. **依赖**。本插件没有 `@deepseek-ai/*` 依赖，无需 `peerDependencies`。
+4. **`engines.dsh`**。声明 `>=0.2.2-rc.1`，与当前安装版本对齐；若目标市场版本区间不同需调整。
 
 ---
 
