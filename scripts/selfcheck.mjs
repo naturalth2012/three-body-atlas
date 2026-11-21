@@ -848,6 +848,29 @@ assert(quotes.filter((q) => q.verbatim === false).length >= 5,
 assert(quotes.every((q) => String(q.text || '').length <= 30), '引文均为短句，不构成文本数据集')
 assert(fs.existsSync(path.join(root, 'docs', 'PROVENANCE.md')), '有独立的数据来源与引文说明文档')
 
+// Architecture doc must exist and must not drift from the code it describes:
+// the tool count and the HTTP route count are read straight out of index.js,
+// so a stale number in the prose fails here instead of shipping.
+const archPath = path.join(root, 'docs', 'ARCHITECTURE.md')
+assert(fs.existsSync(archPath), '有架构与执行细节文档')
+if (fs.existsSync(archPath)) {
+  const arch = fs.readFileSync(archPath, 'utf8')
+  const indexSrc = fs.readFileSync(path.join(root, 'index.js'), 'utf8')
+  const webStart = indexSrc.indexOf('ctx.inject([\'webServer\']')
+  const toolsBlock = indexSrc.slice(0, webStart)
+  const webBlock = indexSrc.slice(webStart)
+  const nTools = (toolsBlock.match(/^\s*register\(\{/gm) || []).length
+  const nGet = (webBlock.match(/^\s*register\([A-Z_]+_PATH/gm) || []).length
+  const nPost = (webBlock.match(/^\s*registerAction\([A-Z_]+_PATH/gm) || []).length
+  assert(nTools === 10, `index.js 注册了 ${nTools} 个 Agent 工具`)
+  assert(arch.includes(`${nTools} 个 Agent 工具`), `架构文档的工具数与代码一致（${nTools}）`)
+  assert(arch.includes(`${nGet} 条 GET 路由`), `架构文档的 GET 路由数与代码一致（${nGet}）`)
+  assert(arch.includes(`${nPost} 条 POST 路由`), `架构文档的 POST 路由数与代码一致（${nPost}）`)
+  assert(arch.includes(`${nGet + nPost} 条 HTTP 路由`), `架构文档的 HTTP 路由合计与代码一致（${nGet + nPost}）`)
+  // The doc promises these three are NOT machine-verifiable; keep that honest.
+  assert(/无法通过任何脚本验证/.test(arch), '架构文档如实标注了不可自动验证的项')
+}
+
 // The market requires a GitHub-hosted raster icon; SVG is rejected by its
 // validator. A plain re-encoding check avoids pulling in image libraries.
 const iconPath = path.join(root, 'assets', 'icon-180.png')
