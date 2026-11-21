@@ -12,6 +12,7 @@ import {
   ERAS, ERA_BY_ID, EVENTS,
   PLOT, GAME_LEVELS, PATHS, DIFFERENCES, THEMES,
   PLACES, PLACE_BY_ID, TECH, TECH_BY_ID, GLOSSARY, GLOSSARY_BY_ID, QUOTES,
+  TIER_LABELS, MAX_TIER, GLOSSARY_TIER, MASKED_FIELDS, tierOfWork, tierOfWorks, maskRecord,
 } from './data/index.js'
 import { SIM_PRESETS, simulate, sensitivity, stabilityScan, darkForest, deterrence } from './sim.js'
 
@@ -165,9 +166,11 @@ const lookupCharacter = (key) => {
     || null
 }
 
-export function characterDetail(key) {
+export function characterDetail(key, options = {}) {
   const c = lookupCharacter(key)
   if (!c) return null
+  const cap = normalizeTier(options.maxTier)
+  const tier = tierOf('character', c)
   const relations = (c.relations || []).map((r) => {
     const other = CHARACTER_BY_ID[r.to]
     const type = RELATION_TYPES[r.type] || { label: r.type, color: '#888' }
@@ -180,29 +183,44 @@ export function characterDetail(key) {
     const w = WORK_BY_ID[id]
     return { id, title: w ? w.title : id, canon: w ? w.canon : '', role, year: w ? w.year : null }
   })
-  const places = PLACES.filter((p) => (p.characters || []).includes(c.id))
+  // Each sub-list is filtered by its OWN tier, not just the parent's. A
+  // first-book reader looking at a character introduced early must not read
+  // the synopsis of a book-three location or the title of a book-three event
+  // through that character's dossier.
+  const withinCap = (itemTier) => cap >= MAX_TIER || itemTier <= cap
+  const places = PLACES.filter((p) => (p.characters || []).includes(c.id) && withinCap(tierOf('place', p)))
     .map((p) => ({ id: p.id, name: p.name, type: p.type, summary: p.summary }))
-  const tech = TECH.filter((t) => (t.related || []).includes(c.id))
+  const tech = TECH.filter((t) => (t.related || []).includes(c.id) && withinCap(tierOf('tech', t)))
     .map((t) => ({ id: t.id, name: t.name, tier: t.tier, summary: t.summary }))
   // Quotes carry a work id; the reader needs the title. Same for the sheet
   // and the tools, so resolve it once here.
-  const quotes = QUOTES.filter((q) => q.speaker === c.id).map((q) => ({
+  const quotes = QUOTES.filter((q) => q.speaker === c.id && withinCap(tierOf('quote', q))).map((q) => ({
     ...q,
     workTitle: WORK_BY_ID[q.work] ? WORK_BY_ID[q.work].title : q.work,
   }))
-  const appearances = EVENTS.filter((e) => (e.characters || []).includes(c.id))
+  const appearances = EVENTS.filter((e) => (e.characters || []).includes(c.id) && withinCap(tierOf('event', e)))
     .map((e) => ({ id: e.id, title: e.title, year: e.year, era: e.era, age: ERA_BY_ID[e.era] ? ERA_BY_ID[e.era].name : e.era }))
   const themes = THEMES.filter((t) => (t.related || []).includes(c.id))
     .map((t) => ({ id: t.id, title: t.title, question: t.question }))
+  // A relationship label can itself be a spoiler ("从执剑人手中接过开关"),
+  // so relationships to a not-yet-reached character are withheld too.
+  const gatedRelations = cap >= MAX_TIER ? relations : relations.map((r) => {
+    const other = CHARACTER_BY_ID[r.to]
+    if (other && tierOf('character', other) > cap) {
+      return { to: r.to, name: r.name, nameEn: r.nameEn, faction: r.faction, type: r.type, typeLabel: r.typeLabel, locked: true, tier: tierOf('character', other) }
+    }
+    return r
+  })
 
-  return {
+  return maskRecord({
     ...toCard(c),
+    tier,
     details: c.details || '',
-    relations, works, places, artifacts: tech, quotes, appearances, themes,
+    relations: gatedRelations, works, places, artifacts: tech, quotes, appearances, themes,
     factionColor: FACTIONS_BY_ID[c.faction] ? FACTIONS_BY_ID[c.faction].color : '#888',
     firstWorkTitle: WORK_BY_ID[c.firstWork] ? WORK_BY_ID[c.firstWork].title : '',
     edgeCount: relations.length,
-  }
+  }, tier, cap)
 }
 
 const lookupPlace = (key) => {
@@ -212,19 +230,25 @@ const lookupPlace = (key) => {
     || PLACES.find((p) => norm(p.name).includes(q) || q.includes(norm(p.name))) || null
 }
 
-export function placeDetail(key) {
+export function placeDetail(key, options = {}) {
   const p = lookupPlace(key)
   if (!p) return null
-  return {
+  const cap = normalizeTier(options.maxTier)
+  const tier = tierOf('place', p)
+  const withinCap = (itemTier) => cap >= MAX_TIER || itemTier <= cap
+  return maskRecord({
     ...p,
+    tier,
     characters: (p.characters || []).map((id) => {
       const c = CHARACTER_BY_ID[id]
       return c ? { id: c.id, name: c.name, factionLabel: c.factionLabel } : { id, name: id, factionLabel: '' }
     }),
     works: (p.works || []).map((id) => ({ id, title: WORK_BY_ID[id] ? WORK_BY_ID[id].title : id })),
-    events: EVENTS.filter((e) => (e.characters || []).some((id) => (p.characters || []).includes(id)))
+    // Event titles are spoilers ("太阳系二维化"), so the list follows the tier.
+    events: EVENTS.filter((e) => (e.characters || []).some((id) => (p.characters || []).includes(id))
+      && withinCap(tierOf('event', e)))
       .slice(0, 6).map((e) => ({ id: e.id, title: e.title, year: e.year })),
-  }
+  }, tier, cap)
 }
 
 const lookupTech = (key) => {
@@ -234,18 +258,22 @@ const lookupTech = (key) => {
     || TECH.find((t) => norm(t.name).includes(q) || norm(t.nameEn).includes(q)) || null
 }
 
-export function techDetail(key) {
+export function techDetail(key, options = {}) {
   const t = lookupTech(key)
   if (!t) return null
-  return {
+  const cap = normalizeTier(options.maxTier)
+  const tier = tierOf('tech', t)
+  const withinCap = (itemTier) => cap >= MAX_TIER || itemTier <= cap
+  return maskRecord({
     ...t,
+    tier,
     relatedCharacters: (t.related || []).map((id) => CHARACTER_BY_ID[id]).filter(Boolean)
       .map((c) => ({ id: c.id, name: c.name, factionLabel: c.factionLabel })),
     relatedTech: (t.related || []).map((id) => TECH_BY_ID[id]).filter(Boolean)
       .map((x) => ({ id: x.id, name: x.name, tier: x.tier })),
-    events: EVENTS.filter((e) => norm(e.desc).includes(norm(t.name))).slice(0, 5)
-      .map((e) => ({ id: e.id, title: e.title, year: e.year })),
-  }
+    events: EVENTS.filter((e) => norm(e.desc).includes(norm(t.name)) && withinCap(tierOf('event', e)))
+      .slice(0, 5).map((e) => ({ id: e.id, title: e.title, year: e.year })),
+  }, tier, cap)
 }
 
 const lookupGlossary = (key) => {
@@ -255,21 +283,35 @@ const lookupGlossary = (key) => {
     || GLOSSARY.find((g) => norm(g.term).includes(q) || q.includes(norm(g.term))) || null
 }
 
-export function glossaryDetail(key) {
+export function glossaryDetail(key, options = {}) {
   const g = lookupGlossary(key)
   if (!g) return null
-  return {
+  const cap = normalizeTier(options.maxTier)
+  const tier = tierOf('glossary', g)
+  const detail = {
     ...g,
-    related: (g.related || []).map((id) => CHARACTER_BY_ID[id] || TECH_BY_ID[id] || GLOSSARY_BY_ID[id])
+    tier,
+    related: (g.related || []).map((id) => CHARACTER_BY_ID[id] || TECH_BY_ID[id] || PLACE_BY_ID[id] || GLOSSARY_BY_ID[id])
       .filter(Boolean)
-      .map((x) => ({
-        id: x.id,
-        name: x.name || x.term,
-        kind: x.term ? '术语' : (x.tier ? '技术' : '人物'),
-        // A stable key the Client can switch on, instead of parsing a label.
-        kindKey: x.term ? 'glossary' : (x.tier ? 'tech' : 'character'),
-      })),
+      .map((x) => {
+        const kindKey = x.term ? 'glossary' : (x.tier !== undefined ? 'tech' : (x.region || x.type ? 'place' : 'character'))
+        const kindLabel = { glossary: '术语', tech: '技术', place: '地点', character: '人物' }[kindKey]
+        const itemTier = kindKey === 'glossary' ? tierOf('glossary', x) : kindKey === 'tech' ? tierOf('tech', x)
+          : kindKey === 'place' ? tierOf('place', x) : tierOf('character', x)
+        return {
+          id: x.id,
+          name: x.name || x.term,
+          kind: kindLabel,
+          // A stable key the Client can switch on, instead of parsing a label.
+          kindKey,
+          tier: itemTier,
+          // The edge target itself can be a spoiler (a book-three character
+          // hanging off a book-one term), so mark it rather than hide the shape.
+          locked: cap < MAX_TIER && itemTier > cap,
+        }
+      }),
   }
+  return maskRecord(detail, tier, cap)
 }
 
 /* ------------------------------------------------------------------ *
@@ -421,6 +463,348 @@ export function plot(options = {}) {
   }))
 }
 
+/* ------------------------------------------------------------------ *
+ * Spoiler gating
+ * ------------------------------------------------------------------ */
+
+/** Clamp an untrusted maxTier value to the supported range. */
+export function normalizeTier(value) {
+  // `URLSearchParams.get` returns null for an absent parameter, and
+  // `Number(null)` is 0 — which would silently mask everything. Absent or
+  // empty must mean "no ceiling", never "tier zero".
+  if (value === null || value === undefined || value === '') return MAX_TIER
+  const n = Number(value)
+  if (!Number.isFinite(n)) return MAX_TIER
+  return Math.min(MAX_TIER, Math.max(0, Math.round(n)))
+}
+
+/** The tier of one record, derived from the work it belongs to. */
+export function tierOf(kind, record) {
+  if (!record) return MAX_TIER
+  if (kind === 'character') return tierOfWork(record.firstWork)
+  if (kind === 'event' || kind === 'place') return tierOfWorks(record.works)
+  if (kind === 'tech') return tierOfWork(record.firstWork)
+  if (kind === 'quote') return tierOfWork(record.work)
+  if (kind === 'glossary') {
+    const t = GLOSSARY_TIER[record.id]
+    return typeof t === 'number' ? t : MAX_TIER
+  }
+  if (kind === 'theme') return MAX_TIER
+  return MAX_TIER
+}
+
+/**
+ * Mask a list of records above the reader's tier. Records are kept, not
+ * dropped: the reader should still see that a thing exists.
+ */
+export function gateList(kind, list, maxTier) {
+  const cap = normalizeTier(maxTier)
+  if (cap >= MAX_TIER) return list
+  return list.map((item) => maskRecord(item, tierOf(kind, item), cap))
+}
+
+/** Same idea for one record. */
+export function gateOne(kind, record, maxTier) {
+  const cap = normalizeTier(maxTier)
+  if (cap >= MAX_TIER) return record
+  return maskRecord(record, tierOf(kind, record), cap)
+}
+
+/** How much of the catalogue each tier unlocks — powers the picker's copy. */
+export function tierSummary() {
+  const count = (kind, list) => {
+    const buckets = [0, 0, 0, 0]
+    for (const item of list) buckets[tierOf(kind, item)] += 1
+    return buckets
+  }
+  const characters = count('character', CHARACTERS)
+  const events = count('event', EVENTS)
+  const glossary = count('glossary', GLOSSARY)
+  return TIER_LABELS.map((label) => ({
+    ...label,
+    characters: characters.slice(0, label.tier + 1).reduce((a, b) => a + b, 0),
+    events: events.slice(0, label.tier + 1).reduce((a, b) => a + b, 0),
+    glossary: glossary.slice(0, label.tier + 1).reduce((a, b) => a + b, 0),
+    totals: {
+      characters: characters[label.tier],
+      events: events[label.tier],
+      glossary: glossary[label.tier],
+    },
+  }))
+}
+
+/* ------------------------------------------------------------------ *
+ * Character journey — one character's path through the story
+ * ------------------------------------------------------------------ */
+
+/**
+ * A beat names its focus character in the title when that character drives it.
+ * Array position is NOT a reliable signal (the "do not answer" beat lists the
+ * listener first even though Ye Wenjie makes the decision), so the role is
+ * derived from the text instead.
+ */
+function beatRole(title, desc, character) {
+  const names = [character.name, ...(character.alias || [])].filter((n) => n && n.length >= 2)
+  const head = title || ''
+  const body = desc || ''
+  if (names.some((n) => head.includes(n))) return 'focus'
+  if (names.some((n) => body.includes(n))) return 'named'
+  return 'present'
+}
+
+/**
+ * Everything one character lives through, in order: events plus plot beats,
+ * each tagged with how strongly they are involved. Characters who never drive
+ * a scene still get an honest, non-empty answer because their events remain.
+ */
+export function characterJourney(key, options = {}) {
+  const c = lookupCharacter(key)
+  if (!c) return null
+  const cap = normalizeTier(options.maxTier)
+
+  const beats = []
+  for (const volume of PLOT) {
+    for (const beat of volume.beats) {
+      if (!(beat.characters || []).includes(c.id)) continue
+      beats.push({
+        kind: 'beat',
+        id: beat.id,
+        title: beat.title,
+        desc: beat.desc,
+        era: beat.era,
+        eraName: ERA_BY_ID[beat.era] ? ERA_BY_ID[beat.era].name : beat.era,
+        work: volume.work,
+        workTitle: WORK_BY_ID[volume.work] ? WORK_BY_ID[volume.work].title : volume.work,
+        role: beatRole(beat.title, beat.desc, c),
+        tier: tierOfWork(volume.work),
+        people: (beat.characters || []).map((id) => (CHARACTER_BY_ID[id] ? CHARACTER_BY_ID[id].name : id)),
+      })
+    }
+  }
+
+  const events = []
+  for (const e of EVENTS) {
+    if (!(e.characters || []).includes(c.id)) continue
+    events.push({
+      kind: 'event',
+      id: e.id,
+      title: e.title,
+      desc: e.desc,
+      year: e.year,
+      era: e.era,
+      eraName: ERA_BY_ID[e.era] ? ERA_BY_ID[e.era].name : e.era,
+      importance: e.importance,
+      workTitle: (e.works || []).map((w) => (WORK_BY_ID[w] ? WORK_BY_ID[w].title : w)).join('、'),
+      // The earliest work an event belongs to decides which chapter it sits in.
+      // Without this, events carry only the joined title and cannot be ordered
+      // against the beats, so the journey interleaved books and repeated
+      // headings.
+      work: (e.works || [])[0] || '',
+      role: beatRole(e.title, e.desc, c),
+      tier: tierOfWorks(e.works),
+      people: (e.characters || []).map((id) => (CHARACTER_BY_ID[id] ? CHARACTER_BY_ID[id].name : id)),
+    })
+  }
+
+  // Beats carry no year; events do. Group by the work each belongs to, then
+  // put beats before the events of the same work so a reader walks the volume
+  // as a story and sees the dated record afterwards.
+  const WORK_ORDER = ['ball-lightning', 'three-body', 'dark-forest', 'deaths-end']
+  const rank = (node) => {
+    const index = WORK_ORDER.indexOf(node.work || '')
+    return index < 0 ? 99 : index
+  }
+  const ordered = [...beats, ...events].sort((a, b) => {
+    const diff = rank(a) - rank(b)
+    if (diff !== 0) return diff
+    // Same work: beats (story) first, then events (dated record).
+    if (a.kind !== b.kind) return a.kind === 'beat' ? -1 : 1
+    return 0
+  })
+
+  const masked = cap >= MAX_TIER
+    ? ordered
+    : ordered.map((node) => (node.tier > cap ? { ...node, locked: true } : node))
+
+  const focusCount = masked.filter((n) => n.role === 'focus').length
+  const worksSeen = [...new Set(beats.map((b) => b.work))]
+
+  return {
+    character: {
+      id: c.id, name: c.name, nameEn: c.nameEn, faction: c.faction,
+      factionLabel: c.factionLabel, summary: c.summary,
+      firstWorkTitle: WORK_BY_ID[c.firstWork] ? WORK_BY_ID[c.firstWork].title : '',
+      factionColor: FACTIONS_BY_ID[c.faction] ? FACTIONS_BY_ID[c.faction].color : '#888',
+    },
+    nodes: masked,
+    total: masked.length,
+    focusCount,
+    works: worksSeen.map((w) => ({ id: w, title: WORK_BY_ID[w] ? WORK_BY_ID[w].title : w })),
+    // Honest signal for the panel: a character with no nodes is a supporting
+    // role, not a broken page.
+    hasStory: masked.length > 0,
+    neighbours: (c.relations || []).slice(0, 6).map((r) => {
+      const other = CHARACTER_BY_ID[r.to]
+      return { id: r.to, name: other ? other.name : r.to, label: r.label }
+    }),
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Reading paths
+ * ------------------------------------------------------------------ */
+
+/**
+ * The five curated paths are written at the work level ("read book one, then
+ * book two"), so each step resolves to a work plus the characters and events
+ * that live in it. That keeps the guide honest: it tells you what to read, not
+ * which page to jump to.
+ */
+export function pathGuide(options = {}) {
+  const cap = normalizeTier(options.maxTier)
+  return PATHS.map((path) => ({
+    id: path.id,
+    icon: path.icon,
+    name: path.name,
+    blurb: path.blurb,
+    steps: path.steps.map((step, index) => {
+      const work = WORK_BY_ID[step.work]
+      const tier = tierOfWork(step.work)
+      const cast = CHARACTERS.filter((c) => (c.works || {})[step.work])
+        .sort((a, b) => (b.relations || []).length - (a.relations || []).length)
+        .slice(0, 5)
+        .map((c) => ({ id: c.id, name: c.name, role: (c.works || {})[step.work] }))
+      const events = EVENTS.filter((e) => (e.works || []).includes(step.work)).length
+      return {
+        index: index + 1,
+        work: step.work,
+        title: work ? work.title : step.work,
+        kind: work ? work.kind : '',
+        year: work ? work.year : null,
+        why: step.why,
+        tier,
+        locked: tier > cap,
+        cast,
+        eventCount: events,
+      }
+    }),
+  }))
+}
+
+/* ------------------------------------------------------------------ *
+ * Concept graph
+ * ------------------------------------------------------------------ */
+
+/**
+ * The glossary's `related` edges are already cross-type: they point at other
+ * terms, at technologies, at characters and at places. Resolving them yields a
+ * real dependency graph (cosmic sociology -> suspicion chain -> dark forest)
+ * without adding any new data.
+ */
+export function conceptGraph(options = {}) {
+  const rootId = options.id ? String(options.id) : ''
+  const depth = Math.min(3, Math.max(1, Number(options.depth) || 2))
+  const cap = normalizeTier(options.maxTier)
+
+  // Callers pass either an id or a human name ("黑暗森林", "猜疑链"), so a raw
+  // id lookup is not enough. Resolve through the same name-matching helpers the
+  // detail views use, then fall back to a substring scan.
+  const resolveRootId = (key) => {
+    if (!key) return ''
+    if (GLOSSARY_BY_ID[key] || TECH_BY_ID[key] || CHARACTER_BY_ID[key] || PLACE_BY_ID[key]) return key
+    const q = norm(key)
+    const g = GLOSSARY.find((x) => norm(x.id) === q || norm(x.term) === q || norm(x.termEn) === q)
+      || GLOSSARY.find((x) => norm(x.term).includes(q) || q.includes(norm(x.term)))
+    if (g) return g.id
+    const t = TECH.find((x) => norm(x.id) === q || norm(x.name) === q || norm(x.nameEn) === q)
+    if (t) return t.id
+    const c = CHARACTERS.find((x) => norm(x.id) === q || norm(x.name) === q || norm(x.nameEn) === q)
+    if (c) return c.id
+    const p = PLACES.find((x) => norm(x.id) === q || norm(x.name) === q || norm(x.nameEn) === q)
+    if (p) return p.id
+    return ''
+  }
+
+  const resolve = (id) => {
+    if (GLOSSARY_BY_ID[id]) {
+      const g = GLOSSARY_BY_ID[id]
+      return { id, kind: 'glossary', name: g.term, category: g.category, tier: tierOf('glossary', g), summary: g.definition }
+    }
+    if (TECH_BY_ID[id]) {
+      const t = TECH_BY_ID[id]
+      return { id, kind: 'tech', name: t.name, category: t.category, tier: tierOf('tech', t), summary: t.summary }
+    }
+    if (CHARACTER_BY_ID[id]) {
+      const c = CHARACTER_BY_ID[id]
+      return { id, kind: 'character', name: c.name, category: c.factionLabel, tier: tierOf('character', c), summary: c.summary }
+    }
+    if (PLACE_BY_ID[id]) {
+      const p = PLACE_BY_ID[id]
+      return { id, kind: 'place', name: p.name, category: p.type, tier: tierOf('place', p), summary: p.summary }
+    }
+    return null
+  }
+
+  const edgesFrom = (id) => {
+    const g = GLOSSARY_BY_ID[id]
+    const t = TECH_BY_ID[id]
+    const source = g ? g.related : t ? t.related : null
+    return (source || []).map(resolve).filter(Boolean)
+  }
+
+  if (!rootId) {
+    // Overview: the most connected concepts, so the panel has an entry point.
+    const ranked = GLOSSARY.map((g) => ({ g, degree: (g.related || []).length }))
+      .sort((a, b) => b.degree - a.degree)
+    return {
+      root: null,
+      nodes: ranked.map(({ g, degree }) => ({
+        ...resolve(g.id), degree, locked: tierOf('glossary', g) > cap,
+      })),
+      edges: [],
+      depth,
+    }
+  }
+
+  const root = resolve(resolveRootId(rootId))
+  if (!root) return null
+
+  const nodes = new Map([[root.id, { ...root, degree: 0 }]])
+  const edges = []
+  const seenEdge = new Set()
+  let frontier = [root.id]
+
+  for (let level = 0; level < depth; level += 1) {
+    const next = []
+    for (const id of frontier) {
+      for (const child of edgesFrom(id)) {
+        const key = id + '->' + child.id
+        if (!seenEdge.has(key)) {
+          seenEdge.add(key)
+          edges.push({ from: id, to: child.id, toKind: child.kind })
+        }
+        if (!nodes.has(child.id)) {
+          nodes.set(child.id, { ...child, degree: 0, level: level + 1 })
+          next.push(child.id)
+        }
+      }
+    }
+    frontier = next
+    if (!frontier.length) break
+  }
+
+  for (const edge of edges) {
+    const a = nodes.get(edge.from)
+    const b = nodes.get(edge.to)
+    if (a) a.degree += 1
+    if (b) b.degree += 1
+  }
+
+  const list = [...nodes.values()].map((n) => (n.tier > cap ? { ...n, locked: true, summary: '' } : n))
+  return { root: list.find((n) => n.id === root.id) || null, nodes: list, edges, depth }
+}
+
+
 export function gameLevels() {
   return GAME_LEVELS.slice().sort((a, b) => (a.order || 0) - (b.order || 0))
 }
@@ -495,6 +879,10 @@ export function bundle() {
     plot: plot(),
     gameLevels: gameLevels(),
     paths: PATHS,
+    // Reading guides resolved to works, with the cast each step involves.
+    guides: pathGuide(),
+    // Spoiler picker: how much each tier unlocks.
+    tiers: tierSummary(),
     differences: DIFFERENCES,
     themes: themes(),
     places: PLACES.map((p) => ({

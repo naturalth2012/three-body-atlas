@@ -16,6 +16,7 @@
 | `data/timeline.js` | `ERAS`、`EVENTS` |
 | `data/plot.js` | `PLOT`、`GAME_LEVELS`、`PATHS`、`DIFFERENCES`、`THEMES` |
 | `data/lore.js` | `PLACES`、`TECH`、`GLOSSARY`、`QUOTES` |
+| `data/spoiler.js` | `WORK_TIER`、`GLOSSARY_TIER`、`tierOfWork`、`maskRecord` 等分级工具 |
 | `data/index.js` | 汇总再导出（由主 Agent 负责） |
 
 ## 通用约定
@@ -252,6 +253,34 @@ DX3906、灰烬（蓝星）、647 号宇宙、三体游戏世界、掩体城市�
 ```
 
 25–35 条，`speaker` 用角色 id（没有具名说话人时用 `'narrator'`）；`textEn` 可选。
+
+## 剧透分级（`data/spoiler.js`）
+
+分级不是另打的一套标签，而是从已有字段推导出来的，所以加新数据时通常什么都不用做：
+
+| 数据类型 | 分级来源 |
+| --- | --- |
+| 角色 | `firstWork` |
+| 事件 / 地点 | `works[]`，取其中**最晚**的一部 |
+| 技术 | `firstWork` |
+| 名句 | `work` |
+| 剧情节点 | 所属卷的 `work` |
+| 术语 | **没有作品字段**，必须写进 `GLOSSARY_TIER` |
+
+```js
+export const GLOSSARY_TIER = {
+  'dark-forest': 2,      // 黑暗森林才展开
+  'swordholder': 3,      // 只存在于第三部
+}
+```
+
+层级：`0` 前史（球状闪电）· `1` 第一部 · `2` 第二部 · `3` 第三部。
+
+**新增术语时必须同步补 `GLOSSARY_TIER`**，否则该术语会退化为最高层级（永不遮蔽）。自检会检查两件事：术语表里没有漏掉的 id，也没有多余的键。
+
+遮蔽行为由 `maskRecord()` 决定：删除 `details` / `desc` / `fate` / `detail` 等长文字段，保留 `name` 与 `summary`，并加上 `locked: true` 与 `tier`。**记录本身不会被删除**——读者仍应知道「有这么个东西存在」。
+
+详情函数（`characterDetail` / `placeDetail` / `techDetail` / `glossaryDetail`）除了遮蔽自身字段，还会按**每个子项自己的层级**过滤事件、地点、技术、关联条目，因为子项的标题本身就是剧透。
 
 ## 校验
 

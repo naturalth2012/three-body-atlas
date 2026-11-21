@@ -55,10 +55,13 @@ globalThis.fetch = async (input, init) => {
   let payload = {}
   try { payload = init && init.body ? JSON.parse(init.body) : {} } catch { payload = {} }
   if (p.endsWith('/bundle')) body = DATA
-  else if (p.endsWith('/detail')) body = engine.characterDetail(q.id) || { error: 'missing' }
-  else if (p.endsWith('/place')) body = engine.placeDetail(q.id) || { error: 'missing' }
-  else if (p.endsWith('/tech')) body = engine.techDetail(q.id) || { error: 'missing' }
-  else if (p.endsWith('/glossary')) body = engine.glossaryDetail(q.id) || { error: 'missing' }
+  else if (p.endsWith('/detail')) body = engine.characterDetail(q.id, { maxTier: q.maxTier }) || { error: 'missing' }
+  else if (p.endsWith('/place')) body = engine.placeDetail(q.id, { maxTier: q.maxTier }) || { error: 'missing' }
+  else if (p.endsWith('/tech')) body = engine.techDetail(q.id, { maxTier: q.maxTier }) || { error: 'missing' }
+  else if (p.endsWith('/glossary')) body = engine.glossaryDetail(q.id, { maxTier: q.maxTier }) || { error: 'missing' }
+  else if (p.endsWith('/journey')) body = engine.characterJourney(q.id, { maxTier: q.maxTier }) || { error: 'missing' }
+  else if (p.endsWith('/concept')) body = engine.conceptGraph({ id: q.id, depth: q.depth, maxTier: q.maxTier }) || { error: 'missing' }
+  else if (p.endsWith('/guide')) body = { paths: engine.pathGuide({ maxTier: q.maxTier }) }
   else if (p.endsWith('/graph')) body = engine.buildGraph({})
   else if (p.endsWith('/path')) body = engine.relationPath(q.from, q.to)
   else if (p.endsWith('/search-all')) body = engine.searchAll(q.q || '')
@@ -73,7 +76,7 @@ globalThis.fetch = async (input, init) => {
 
 /* --- Load the client with a probe appended ------------------------------- */
 let source = fs.readFileSync(path.join(root, 'client.js'), 'utf8').replace(/\r\n/g, '\n')
-const probe = '\n    globalThis.__TBA_PROBE__ = { OverviewTab, PlotTab, CharactersTab, GraphTab, TimelineTab, GameTab, SimTab, OrbitStage, EraStrip, TechTab, PlacesTab, LoreTab, ThemesTab, DiffTab, AskTab, Drawer, AtlasPage, PathFinder, OrbitPanel, SensPanel, ScanPanel, ForestPanel, DeterrencePanel, LineChart, PhasePortrait, FluxChart, CatastrophePanel, ReadingPanel }\n'
+const probe = '\n    globalThis.__TBA_PROBE__ = { OverviewTab, PlotTab, CharactersTab, GraphTab, TimelineTab, GameTab, SimTab, OrbitStage, EraStrip, TechTab, PlacesTab, LoreTab, ThemesTab, DiffTab, AskTab, Drawer, AtlasPage, PathFinder, OrbitPanel, SensPanel, ScanPanel, ForestPanel, DeterrencePanel, LineChart, PhasePortrait, FluxChart, CatastrophePanel, ReadingPanel, GuideTab, JourneyTab, ConceptTab, TierPicker, Locked }\n'
 const anchor = "\n    return {\n      inject: ['slots'],"
 if (!source.includes(anchor)) {
   console.error('probe anchor not found — client.js structure changed')
@@ -129,6 +132,7 @@ function render(node, trail) {
 const tabs = [
   'OverviewTab', 'PlotTab', 'CharactersTab', 'GraphTab', 'TimelineTab', 'GameTab',
   'SimTab', 'TechTab', 'PlacesTab', 'LoreTab', 'ThemesTab', 'DiffTab', 'AskTab',
+  'GuideTab', 'JourneyTab', 'ConceptTab',
 ]
 for (const name of tabs) {
   const Comp = T[name]
@@ -157,6 +161,28 @@ render(React.createElement(T.PhasePortrait, { phase: SIM.phase, t }), 'PhasePort
 render(React.createElement(T.CatastrophePanel, { result: SIM, t, onSeek() {} }), 'CatastrophePanel')
 render(React.createElement(T.ReadingPanel, { result: SIM, t }), 'ReadingPanel')
 
+// Journey and concept views depend on fetched payloads, which the stubbed
+// effect never resolves. Exercise their render paths directly instead.
+const journeyOpen = engine.characterJourney('cheng-xin', { maxTier: 3 })
+const journeyLocked = engine.characterJourney('cheng-xin', { maxTier: 1 })
+const journeyEmpty = engine.characterJourney('qin-shi-huang')
+for (const [label, payload] of [['open', journeyOpen], ['locked', journeyLocked], ['empty', journeyEmpty]]) {
+  if (!payload) { errors.push('journey payload missing: ' + label); continue }
+  const nodes = payload.nodes || []
+  const hasChapter = nodes.some((n) => n.workTitle)
+  if (!hasChapter && nodes.length) errors.push('journey nodes lost their work heading: ' + label)
+}
+const conceptOpen = engine.conceptGraph({ id: 'dark-forest', depth: 3, maxTier: 3 })
+const conceptLocked = engine.conceptGraph({ id: 'dark-forest', depth: 3, maxTier: 0 })
+const conceptOverview = engine.conceptGraph({})
+if (!conceptOpen || !conceptLocked || !conceptOverview) errors.push('concept payload missing')
+else {
+  if (conceptLocked.nodes.filter((n) => n.locked).length === 0) {
+    errors.push('concept graph did not lock anything at tier 0')
+  }
+  if (conceptOverview.root !== null) errors.push('concept overview should have no root')
+}
+
 // The page shell in its empty branch.
 render(React.createElement(T.AtlasPage, { t, onBack() {} }), 'AtlasPage')
 
@@ -167,11 +193,30 @@ const dossierCases = [
 ]
 for (const [kind, id] of dossierCases) {
   try {
-    render(T.Drawer({ kind, id, data: DATA, t, onClose() {}, onOpen() {} }), 'Drawer(' + kind + ':' + id + ')')
+    render(T.Drawer({ kind, id, data: DATA, t, tier: 3, onClose() {}, onOpen() {} }), 'Drawer(' + kind + ':' + id + ')')
   } catch (error) {
     errors.push('Drawer(' + kind + ':' + id + ') :: ' + error.message)
   }
 }
+
+// The locked branch is a different element tree, so render it too: a reader
+// who set an early tier must not hit a crash where the full dossier worked.
+for (const [kind, id] of dossierCases) {
+  try {
+    render(T.Drawer({ kind, id, data: DATA, t, tier: 1, onClose() {}, onOpen() {} }), 'DrawerLocked(' + kind + ':' + id + ')')
+  } catch (error) {
+    errors.push('DrawerLocked(' + kind + ':' + id + ') :: ' + error.message)
+  }
+}
+
+// Spoiler picker at both ends of its range.
+for (const value of [0, 1, 2, 3]) {
+  render(React.createElement(T.TierPicker, { tiers: DATA.tiers, value, onChange() {}, t }), 'TierPicker(' + value + ')')
+}
+
+// The masked block, with and without a reveal handler.
+render(React.createElement(T.Locked, { tier: 3, t }, 'hidden'), 'Locked')
+render(React.createElement(T.Locked, { tier: 2, t, onReveal() {} }, 'hidden'), 'Locked(onReveal)')
 
 console.log('function components rendered:', rendered)
 console.log('distinct components:', [...seen].sort().join(', '))

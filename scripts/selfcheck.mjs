@@ -512,8 +512,9 @@ host.apply(routeCtx)
 
 const toolNames = registrations.map((r) => r.name).sort()
 const expectedTools = [
-  'three_body_ask', 'three_body_detail', 'three_body_game',
-  'three_body_relation', 'three_body_search', 'three_body_simulate', 'three_body_theme', 'three_body_timeline',
+  'three_body_ask', 'three_body_concept', 'three_body_detail', 'three_body_game',
+  'three_body_journey', 'three_body_relation', 'three_body_search', 'three_body_simulate',
+  'three_body_theme', 'three_body_timeline',
 ]
 assert(JSON.stringify(toolNames) === JSON.stringify(expectedTools), `注册的工具：${toolNames.join(', ')}`)
 for (const def of registrations) {
@@ -534,6 +535,8 @@ for (const [name, args] of Object.entries({
   three_body_theme: { list: true },
   three_body_game: {},
   three_body_ask: { question: '水滴是什么' },
+  three_body_journey: { name: '程心' },
+  three_body_concept: { name: '黑暗森林' },
 })) {
   const value = await byName[name].execute(args)
   assert(typeof value.text === 'string' && value.text.length > 0, `工具 ${name} 返回非空文本`)
@@ -546,14 +549,15 @@ const fakeRes = () => {
   res.end = (payload) => { res.body = payload }
   return res
 }
-assert(handlers.size >= 18, `注册路由 ${handlers.size} 条（期望 ≥18）`)
+assert(handlers.size >= 21, `注册路由 ${handlers.size} 条（期望 ≥21）`)
 for (const [routePath, handler] of handlers) {
   const res = fakeRes()
-  const query = routePath.endsWith('/detail') || routePath.endsWith('/place') || routePath.endsWith('/tech') || routePath.endsWith('/glossary')
+  const query = routePath.endsWith('/detail') || routePath.endsWith('/place') || routePath.endsWith('/tech') || routePath.endsWith('/glossary') || routePath.endsWith('/journey')
     ? '?id=' + CHARACTERS[0].id
-    : routePath.endsWith('/path') ? '?from=' + encodeURIComponent(CHARACTERS[0].name) + '&to=' + encodeURIComponent(CHARACTERS[1].name)
-      : routePath.endsWith('/ask') ? '?q=' + encodeURIComponent('罗辑是谁')
-        : ''
+    : routePath.endsWith('/concept') ? '?id=' + GLOSSARY[0].id
+      : routePath.endsWith('/path') ? '?from=' + encodeURIComponent(CHARACTERS[0].name) + '&to=' + encodeURIComponent(CHARACTERS[1].name)
+        : routePath.endsWith('/ask') ? '?q=' + encodeURIComponent('罗辑是谁')
+          : ''
   await handler({ method: 'GET', url: routePath + query, on: () => {} }, res)
   assert(res.status === 200 && typeof res.body === 'string' && res.body.length > 2, `路由 ${routePath} 返回 200`)
   try {
@@ -562,6 +566,238 @@ for (const [routePath, handler] of handlers) {
     fail(`路由 ${routePath} 的响应不是 JSON`)
   }
 }
+
+console.log('\n## 剧透分级')
+
+// Every work the catalogue references must have a tier, or gating silently
+// falls back to "most spoilery" and locks content a reader has already passed.
+const referencedWorks = new Set()
+for (const c of D.CHARACTERS) if (c.firstWork) referencedWorks.add(c.firstWork)
+for (const e of D.EVENTS) for (const w of e.works || []) referencedWorks.add(w)
+for (const p of D.PLACES) for (const w of p.works || []) referencedWorks.add(w)
+for (const t of D.TECH) if (t.firstWork) referencedWorks.add(t.firstWork)
+for (const q of D.QUOTES) if (q.work) referencedWorks.add(q.work)
+const untieredWorks = [...referencedWorks].filter((w) => D.WORK_TIER[w] === undefined)
+assert(untieredWorks.length === 0, `引用到的作品都有分级${untieredWorks.length ? '：' + untieredWorks.join(', ') : ''}`)
+
+// The glossary is the one dataset with no work field; its tier table must
+// cover every term, otherwise those entries can never be gated.
+const untieredTerms = D.GLOSSARY.filter((g) => D.GLOSSARY_TIER[g.id] === undefined)
+assert(untieredTerms.length === 0,
+  `术语都有分级${untieredTerms.length ? '：' + untieredTerms.slice(0, 3).map((g) => g.id).join(', ') : ''}`)
+const strayTerms = Object.keys(D.GLOSSARY_TIER).filter((id) => !D.GLOSSARY_BY_ID[id])
+assert(strayTerms.length === 0, `术语分级表没有多余键${strayTerms.length ? '：' + strayTerms.join(', ') : ''}`)
+
+// Gating must mask, not delete: the reader still learns the entry exists.
+const lockedChengxin = E.characterDetail('cheng-xin', { maxTier: 1 })
+assert(lockedChengxin && lockedChengxin.locked === true, '低剧透层级下程心详情被标记为遮蔽')
+assert(!lockedChengxin.details, '遮蔽后长传记被移除')
+assert(!!lockedChengxin.summary, '遮蔽后仍保留一句话简介')
+assert(!!lockedChengxin.name, '遮蔽后仍保留姓名')
+const openChengxin = E.characterDetail('cheng-xin', { maxTier: 3 })
+assert(!openChengxin.locked && !!openChengxin.details, '最高层级下程心详情完整')
+
+// A first-book character must stay open to a first-book reader.
+const yeOpen = E.characterDetail('ye-wenjie', { maxTier: 1 })
+assert(!yeOpen.locked && !!yeOpen.details, '第一部的叶文洁在第一部层级下完整')
+
+const swordLocked = E.glossaryDetail('swordholder', { maxTier: 1 })
+assert(swordLocked.locked === true && !swordLocked.detail && !!swordLocked.definition,
+  '执剑人在第一部层级下只保留定义')
+const shipLocked = E.techDetail('light-speed-ship', { maxTier: 1 })
+assert(shipLocked.locked === true && !shipLocked.desc, '光速飞船在低层级下被遮蔽')
+
+// Gating must reach the sub-lists, not just the record's own fields. A
+// first-book reader opening a character must not read book-three event titles
+// or location synopses through that character's dossier.
+const fullChengxin = E.characterDetail('cheng-xin', { maxTier: 3 })
+const cappedChengxin = E.characterDetail('cheng-xin', { maxTier: 1 })
+assert(fullChengxin.appearances.length > 0 && cappedChengxin.appearances.length === 0,
+  `程心的事件列表随层级收紧（${fullChengxin.appearances.length} → ${cappedChengxin.appearances.length}）`)
+assert(fullChengxin.places.length > 0 && cappedChengxin.places.length === 0,
+  `程心的地点列表随层级收紧（${fullChengxin.places.length} → ${cappedChengxin.places.length}）`)
+assert(fullChengxin.artifacts.length > 0 && cappedChengxin.artifacts.length === 0,
+  `程心的技术列表随层级收紧（${fullChengxin.artifacts.length} → ${cappedChengxin.artifacts.length}）`)
+// Relationship labels are spoilers too: "接过执剑人开关" reveals the plot.
+assert(cappedChengxin.relations.some((r) => r.locked === true),
+  '指向未读章节人物的关系被标记为遮蔽')
+assert(!cappedChengxin.relations.some((r) => r.locked && r.label),
+  '被遮蔽的关系不再泄漏描述文字')
+
+// A first-book character keeps their own first-book material: gating must not
+// become "hide everything below the ceiling".
+const yeCapped = E.characterDetail('ye-wenjie', { maxTier: 1 })
+assert(yeCapped.appearances.length > 0, `叶文洁在第一部层级下仍保留 ${yeCapped.appearances.length} 个事件`)
+assert(yeCapped.places.length > 0, `叶文洁在第一部层级下仍保留 ${yeCapped.places.length} 个地点`)
+assert(!yeCapped.locked, '叶文洁的档案本身不被遮蔽')
+
+// Places, technologies and terms carry their own event lists and edges, which
+// are just as spoilery as the parent record.
+const trisolarisOpen = E.placeDetail('trisolaris', { maxTier: 3 })
+const trisolarisCapped = E.placeDetail('trisolaris', { maxTier: 0 })
+assert(trisolarisOpen.events.length > 0 && trisolarisCapped.events.length === 0,
+  `地点的事件列表随层级收紧（${trisolarisOpen.events.length} → ${trisolarisCapped.events.length}）`)
+const sophonOpen = E.techDetail('sophon', { maxTier: 3 })
+const sophonCapped = E.techDetail('sophon', { maxTier: 0 })
+assert(sophonOpen.events.length > 0 && sophonCapped.events.length === 0,
+  `技术的事件列表随层级收紧（${sophonOpen.events.length} → ${sophonCapped.events.length}）`)
+const termCapped = E.glossaryDetail('dark-forest', { maxTier: 0 })
+assert(termCapped.related.some((r) => r.locked === true), '术语的关联条目带遮蔽标记')
+const termOpen = E.glossaryDetail('dark-forest', { maxTier: 3 })
+assert(termOpen.related.every((r) => !r.locked), '最高层级下术语关联不遮蔽')
+
+// Omitted maxTier must mean "everything", so the agent tools stay lossless.
+assert(!E.characterDetail('cheng-xin').locked, '不传 maxTier 时不做遮蔽')
+assert(E.normalizeTier(undefined) === 3 && E.normalizeTier(9) === 3 && E.normalizeTier(-4) === 0,
+  'maxTier 越界时被夹到合法区间')
+// `URLSearchParams.get` yields null for an absent parameter and Number(null)
+// is 0, so a missing ceiling must not collapse into "mask everything".
+assert(E.normalizeTier(null) === 3, '缺失的 maxTier 视为「不设上限」而不是 0')
+assert(E.normalizeTier('') === 3, '空的 maxTier 视为「不设上限」')
+assert(E.normalizeTier('2') === 2, '字符串形式的 maxTier 被正确解析')
+assert(!E.characterDetail('cheng-xin', { maxTier: null }).locked, '路由缺参时详情不被误遮蔽')
+assert(!E.placeDetail('trisolaris', { maxTier: null }).locked, '路由缺参时地点不被误遮蔽')
+assert(!E.techDetail('sophon', { maxTier: null }).locked, '路由缺参时技术不被误遮蔽')
+assert(!E.glossaryDetail('dark-forest', { maxTier: null }).locked, '路由缺参时术语不被误遮蔽')
+
+const tiers = E.tierSummary()
+assert(tiers.length === 4, `分级共 ${tiers.length} 档`)
+assert(tiers[3].characters === D.CHARACTERS.length, '最高层级解锁全部人物')
+assert(tiers[0].characters < tiers[3].characters, '层级越高解锁越多')
+
+console.log('\n## 角色视角')
+
+const journey = E.characterJourney('cheng-xin')
+assert(journey && journey.hasStory, '程心有一条完整故事线')
+assert(journey.total > 5, `程心的情节节点 ${journey.total} 个`)
+assert(journey.nodes.every((n) => ['focus', 'named', 'present'].includes(n.role)),
+  '每个节点都有明确的角色分量')
+assert(journey.focusCount >= 1 && journey.focusCount < journey.total,
+  `程心主导 ${journey.focusCount} 个节点，其余为参与`)
+assert(journey.nodes.every((n) => n.kind === 'beat' || n.kind === 'event'), '节点只来自情节与事件')
+
+// Nodes must be grouped by work, without the same heading appearing twice.
+// Events and beats were originally sorted independently, which interleaved
+// the novels and repeated chapter headings.
+for (const name of ['罗辑', '程心', '叶文洁']) {
+  const j = E.characterJourney(name)
+  const headings = []
+  let last = ''
+  for (const n of j.nodes) {
+    if (n.workTitle && n.workTitle !== last) { headings.push(n.workTitle); last = n.workTitle }
+  }
+  assert(new Set(headings).size === headings.length,
+    `${name} 的故事线章节不重复：${headings.join(' → ')}`)
+}
+const luoJi = E.characterJourney('罗辑')
+assert(luoJi.nodes.every((n) => n.work), '每个节点都归属到一部作品，才能正确分章')
+// Within one work, story beats precede the dated events. Across works this
+// cannot hold — a character spanning two novels has beats in both — so the
+// check is per work, not global.
+for (const name of ['罗辑', '叶文洁']) {
+  const j = E.characterJourney(name)
+  const byWork = new Map()
+  for (const n of j.nodes) {
+    if (!byWork.has(n.work)) byWork.set(n.work, [])
+    byWork.get(n.work).push(n.kind)
+  }
+  for (const [work, kinds] of byWork) {
+    const lastBeat = kinds.lastIndexOf('beat')
+    const firstEvent = kinds.indexOf('event')
+    assert(lastBeat === -1 || firstEvent === -1 || lastBeat < firstEvent,
+      `${name} 在 ${work} 中情节排在事件之前`)
+  }
+}
+
+// The rule that decides "focus" must be text-based. The listener who receives
+// the do-not-answer message is listed first but does not drive that beat; the
+// beat title is a line of dialogue with no name in it, so BOTH characters are
+// honestly reported as "named" rather than guessing from array position.
+const doNotAnswer = E.characterJourney('ye-wenjie')
+const beat = doNotAnswer && doNotAnswer.nodes.find((n) => n.kind === 'beat' && /不要回答/.test(n.title))
+assert(beat && beat.role === 'named',
+  '标题不含人名的情节不会被伪造成主导，也不会把出场顺序第一的监听员当成主角')
+// Where the title does name the actor, focus must be detected.
+const emit = doNotAnswer && doNotAnswer.nodes.find((n) => /叶文洁的第二次发射/.test(n.title))
+assert(emit && emit.role === 'focus', '标题点名叶文洁时被判定为主导')
+
+// The title-mention rule only fires on a minority of beats; that is a known,
+// measured limit of deriving roles from text, not a silent failure.
+const beatsWithFocus = []
+for (const volume of D.PLOT) {
+  for (const b of volume.beats) {
+    const named = (b.characters || []).some((id) => {
+      const c = D.CHARACTER_BY_ID[id]
+      if (!c) return false
+      return [c.name, ...(c.alias || [])].filter((n) => n && n.length >= 2).some((n) => String(b.title).includes(n))
+    })
+    if (named) beatsWithFocus.push(b.id)
+  }
+}
+assert(beatsWithFocus.length >= 10,
+  `${beatsWithFocus.length}/${D.PLOT.reduce((s, v) => s + v.beats.length, 0)} 个情节的标题点名了主导角色`)
+assert(beatsWithFocus.length < D.PLOT.reduce((s, v) => s + v.beats.length, 0),
+  '并非所有情节都能从标题判定主导，其余按「被点名／在场」如实降级')
+
+// Characters without scenes must be reported honestly, not faked.
+const noStory = E.characterJourney('qin-shi-huang')
+assert(noStory && noStory.hasStory === false, '没有情节节点的角色被如实标记')
+assert(noStory.nodes.length === 0 && noStory.neighbours.length > 0, '此类角色仍给出关系入口')
+assert(noStory.character && noStory.character.name, '此类角色仍有基本档案')
+
+// Gating applies inside the journey too.
+const cappedJourney = E.characterJourney('cheng-xin', { maxTier: 1 })
+assert(cappedJourney.nodes.every((n) => n.locked), '低层级下程心的故事线全部遮蔽')
+const openJourney = E.characterJourney('cheng-xin', { maxTier: 3 })
+assert(openJourney.nodes.every((n) => !n.locked), '最高层级下故事线不遮蔽')
+
+console.log('\n## 概念图')
+
+const concept = E.conceptGraph({ id: 'dark-forest', depth: 2 })
+assert(concept && concept.root && concept.root.name, '黑暗森林可作为概念图起点')
+assert(concept.nodes.length > 3, `黑暗森林周边 ${concept.nodes.length} 个节点`)
+assert(concept.edges.length > 3, `黑暗森林周边 ${concept.edges.length} 条边`)
+const conceptKinds = new Set(concept.nodes.map((n) => n.kind))
+assert(conceptKinds.size >= 2, `概念图跨类型：${[...conceptKinds].join('、')}`)
+assert(concept.nodes.every((n) => ['glossary', 'tech', 'character', 'place'].includes(n.kind)),
+  '概念图节点类型都在支持范围内')
+assert(concept.nodes.every((n) => n.degree >= 0), '每个节点都有度数')
+
+const overview = E.conceptGraph({})
+assert(overview.root === null && overview.nodes.length === D.GLOSSARY.length,
+  '无参数时返回全部术语总览')
+assert(overview.nodes[0].degree >= overview.nodes[overview.nodes.length - 1].degree,
+  '总览按关联度排序')
+
+// Every related edge in the glossary must resolve, or the graph has holes.
+const allResolved = D.GLOSSARY.every((g) => E.conceptGraph({ id: g.id, depth: 1 }))
+assert(allResolved, '每个术语都能作为图起点')
+
+// Callers pass human names as often as ids: the agent tool takes "猜疑链",
+// the panel may pass an id. Both must resolve, or the tool answers "not found"
+// for a term that exists.
+for (const [key, expected] of [['猜疑链', '猜疑链'], ['chain-of-suspicion', '猜疑链'], ['黑暗森林', '黑暗森林法则']]) {
+  const g = E.conceptGraph({ id: key, depth: 1 })
+  assert(g && g.root && g.root.name === expected, `概念名「${key}」解析为「${expected}」`)
+}
+assert(E.conceptGraph({ id: '不存在的概念xyz' }) === null, '不存在的概念返回 null，而不是崩溃')
+// Non-glossary entities can also be a root, so the graph works from a technology.
+const waterDrop = E.conceptGraph({ id: '水滴', depth: 1 })
+assert(waterDrop && waterDrop.root.kind === 'tech', '技术也能作为概念图起点')
+
+console.log('\n## 导读路径')
+
+const guides = E.pathGuide()
+assert(guides.length === D.PATHS.length, `导读路径 ${guides.length} 条`)
+assert(guides.every((g) => g.steps.length > 0), '每条路径都有步骤')
+assert(guides.every((g) => g.steps.every((s) => s.why && s.title)), '每步都有作品与推荐理由')
+assert(guides.every((g) => g.steps.every((s) => Array.isArray(s.cast))), '每步都解析出涉及人物')
+assert(guides.every((g) => g.steps.every((s) => s.index >= 1)), '每步都有序号')
+const guideTiers = guides.flatMap((g) => g.steps).map((s) => s.tier)
+assert(guideTiers.every((t) => typeof t === 'number'), '每步都带剧透层级')
+const cappedGuides = E.pathGuide({ maxTier: 1 })
+assert(cappedGuides.flatMap((g) => g.steps).some((s) => s.locked),
+  '低层级下后续步骤被折叠')
 
 console.log('\n## 发布与市场投稿准备')
 
@@ -646,8 +882,12 @@ if (styleBlock) {
   // stage, and the relation-type chips (each type has a curated hue, and the
   // chip always sits on a darkened overlay so white text stays legible).
   const artwork = /tba-crest|tba-era-|tba-stage|tba-reltype/
+  // A literal inside `var(--token, #fff)` is a fallback used only when the
+  // theme token is absent, so it does not hard-code a colour against the theme.
+  const stripFallbacks = (line) => line.replace(/var\([^)]*\)/g, 'var()')
   const offenders = styleBlock[1]
     .split('\n')
+    .map(stripFallbacks)
     .filter((line) => /#[0-9a-fA-F]{3,8}/.test(line.replace(/rgba?\([^)]*\)/g, '')))
     .filter((line) => !artwork.test(line))
   assert(offenders.length === 0,

@@ -14,6 +14,7 @@ import {
   characterDetail, placeDetail, techDetail, glossaryDetail,
   buildGraph, neighbors, relationPath,
   timeline, plot, gameLevels, themes, differences,
+  characterJourney, pathGuide, conceptGraph, tierSummary,
   ask, suggestions,
   SIM_PRESETS, simulate, sensitivity, stabilityScan, darkForest, deterrence,
 } from './engine.js'
@@ -40,6 +41,9 @@ export const SENS_PATH = BASE + '/sensitivity'
 export const SCAN_PATH = BASE + '/stability'
 export const FOREST_PATH = BASE + '/dark-forest'
 export const DETERRENCE_PATH = BASE + '/deterrence'
+export const JOURNEY_PATH = BASE + '/journey'
+export const GUIDE_PATH = BASE + '/guide'
+export const CONCEPT_PATH = BASE + '/concept'
 
 const textOutput = {
   schema: { type: 'object', properties: { text: { type: 'string' } }, additionalProperties: true },
@@ -197,6 +201,11 @@ export function apply(ctx) {
             enum: ['character', 'place', 'tech', 'glossary', 'work'],
             description: 'Optional explicit entity kind; inferred when omitted.',
           },
+          maxTier: {
+            type: 'number',
+            description: 'Optional spoiler ceiling 0-3 (0 prelude, 1 book one, 2 book two, 3 everything). '
+              + 'Omit to return the full record; pass a lower value to withhold plot details.',
+          },
         },
         required: ['name'],
         additionalProperties: false,
@@ -205,10 +214,11 @@ export function apply(ctx) {
       async execute(args) {
         const name = (args && args.name) || ''
         const kind = (args && args.kind) || ''
+        const maxTier = args && args.maxTier
         const prefer = (k) => !kind || kind === k
 
         if (prefer('character')) {
-          const d = characterDetail(name)
+          const d = characterDetail(name, { maxTier })
           if (d) {
             const lines = [
               `# ${d.name}（${d.nameEn}）`,
@@ -219,7 +229,7 @@ export function apply(ctx) {
             if (d.fate) lines.push('', '结局：' + d.fate)
             if (d.relations.length) {
               lines.push('', '## 主要关系')
-              d.relations.forEach((r) => lines.push(`- [${r.typeLabel}] ${r.name}：${r.label}`))
+              d.relations.forEach((r) => lines.push(`- [${r.typeLabel}] ${r.name}：${r.locked ? '（涉及更后面的情节，已按剧透层级遮蔽）' : r.label}`))
             }
             lines.push('', '## 出场作品')
             d.works.forEach((w) => lines.push(`- ${w.title}：${w.role}（${w.canon}）`))
@@ -247,7 +257,7 @@ export function apply(ctx) {
           }
         }
         if (prefer('place')) {
-          const p = placeDetail(name)
+          const p = placeDetail(name, { maxTier })
           if (p) {
             return {
               text: [
@@ -259,7 +269,7 @@ export function apply(ctx) {
           }
         }
         if (prefer('tech')) {
-          const t = techDetail(name)
+          const t = techDetail(name, { maxTier })
           if (t) {
             return {
               text: [
@@ -272,7 +282,7 @@ export function apply(ctx) {
           }
         }
         if (prefer('glossary')) {
-          const g = glossaryDetail(name)
+          const g = glossaryDetail(name, { maxTier })
           if (g) {
             const lines = [`# ${g.term}（${g.termEn || ''}）`, g.category, '', g.definition, '', g.detail]
             if (g.related.length) lines.push('', '## 相关条目', ...g.related.map((c) => `- ${c.name}`))
@@ -495,6 +505,94 @@ export function apply(ctx) {
         return { text: ask((args && args.question) || '') }
       },
     }, 'three-body-atlas: three_body_ask tool')
+
+    register({
+      name: 'three_body_journey',
+      description:
+        'Walk one character through the story in order: every event and plot beat they appear in, tagged as '
+        + 'driving the scene (focus), being named in it, or merely present. Use it to answer "what does this '
+        + 'character actually live through" or to follow one thread across the trilogy.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Character name or id, e.g. 程心 / 罗辑 / ye-wenjie' },
+          maxTier: {
+            type: 'number',
+            description: 'Optional spoiler ceiling 0-3; omit to include everything.',
+          },
+        },
+        required: ['name'],
+        additionalProperties: false,
+      },
+      output: textOutput,
+      async execute(args) {
+        const j = characterJourney((args && args.name) || '', { maxTier: args && args.maxTier })
+        if (!j) return { text: '没有找到该角色。' }
+        const roleLabel = { focus: '主导', named: '被点名', present: '在场' }
+        const lines = [
+          `# ${j.character.name}（${j.character.nameEn}）`,
+          `${j.character.factionLabel} · 首次出场：${j.character.firstWorkTitle || '—'}`,
+          '', j.character.summary, '',
+          `共 ${j.total} 个情节节点，其中 ${j.focusCount} 个由他/她主导。`,
+        ]
+        if (!j.hasStory) {
+          lines.push('', '这个角色没有单独出场的情节节点，属于配角或背景设定；以下是其关系入口：')
+          j.neighbours.forEach((n) => lines.push(`- ${n.name}：${n.label}`))
+          return { text: lines.join('\n') }
+        }
+        let lastWork = ''
+        for (const node of j.nodes) {
+          const work = node.workTitle || ''
+          if (work && work !== lastWork) { lines.push('', `## ${work}`); lastWork = work }
+          const tag = roleLabel[node.role] || node.role
+          const lock = node.locked ? '〔剧透已遮蔽〕' : ''
+          lines.push(`- **${node.title}**（${tag}）${node.year ? ' · ' + node.year : ''}${lock}`)
+          if (!node.locked && node.desc) lines.push(`  ${node.desc}`)
+        }
+        return { text: lines.join('\n') }
+      },
+    }, 'three-body-atlas: three_body_journey tool')
+
+    register({
+      name: 'three_body_concept',
+      description:
+        'Explore how Three-Body concepts depend on each other. Returns the cross-type graph around a term: '
+        + 'related terms, technologies, characters and places, up to three hops. Use it for "how does X lead '
+        + 'to Y" questions, e.g. 黑暗森林 or 猜疑链.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Concept or term, e.g. 黑暗森林 / 猜疑链 / 面壁计划. Omit for an overview.' },
+          depth: { type: 'number', description: 'Hops to follow, 1-3; defaults to 2.' },
+        },
+        required: [],
+        additionalProperties: false,
+      },
+      output: textOutput,
+      async execute(args) {
+        const g = conceptGraph({ id: (args && args.name) || '', depth: args && args.depth })
+        if (!g) return { text: '没有找到该概念。' }
+        if (!g.root) {
+          return {
+            text: '概念总览（按关联度排序）：\n' + g.nodes.slice(0, 15)
+              .map((n) => `- ${n.name}（${n.kind}，${n.degree} 条关联）：${n.summary}`).join('\n'),
+          }
+        }
+        const kindLabel = { glossary: '术语', tech: '技术', character: '人物', place: '地点' }
+        const lines = [
+          `# ${g.root.name}`, `${kindLabel[g.root.kind] || g.root.kind} · ${g.root.category}`, '', g.root.summary || '', '',
+          `## 关联（${g.nodes.length - 1} 个节点，${g.edges.length} 条边）`,
+        ]
+        for (const e of g.edges) {
+          const from = g.nodes.find((n) => n.id === e.from)
+          const to = g.nodes.find((n) => n.id === e.to)
+          if (from && to) lines.push(`- ${from.name} → ${to.name}（${kindLabel[to.kind] || to.kind}）`)
+        }
+        const locked = g.nodes.filter((n) => n.locked)
+        if (locked.length) lines.push('', `（其中 ${locked.length} 个节点超出当前剧透层级）`)
+        return { text: lines.join('\n') }
+      },
+    }, 'three-body-atlas: three_body_concept tool')
   })
 
   // ---- Browser routes ----------------------------------------------------
@@ -518,17 +616,34 @@ export function apply(ctx) {
 
     register(ALL_PATH, (p) => searchAll(p.get('q') || ''), 'three-body-atlas: universal search route')
 
-    register(DETAIL_PATH, (p) => characterDetail(p.get('id') || p.get('q') || '')
-      || { error: '没有找到该角色' }, 'three-body-atlas: detail route')
+    register(DETAIL_PATH, (p) => characterDetail(p.get('id') || p.get('q') || '', {
+      maxTier: p.get('maxTier'),
+    }) || { error: '没有找到该角色' }, 'three-body-atlas: detail route')
 
-    register(PLACE_PATH, (p) => placeDetail(p.get('id') || p.get('q') || '')
-      || { error: '没有找到该地点' }, 'three-body-atlas: place route')
+    register(PLACE_PATH, (p) => placeDetail(p.get('id') || p.get('q') || '', {
+      maxTier: p.get('maxTier'),
+    }) || { error: '没有找到该地点' }, 'three-body-atlas: place route')
 
-    register(TECH_PATH, (p) => techDetail(p.get('id') || p.get('q') || '')
-      || { error: '没有找到该技术' }, 'three-body-atlas: tech route')
+    register(TECH_PATH, (p) => techDetail(p.get('id') || p.get('q') || '', {
+      maxTier: p.get('maxTier'),
+    }) || { error: '没有找到该技术' }, 'three-body-atlas: tech route')
 
-    register(GLOSSARY_PATH, (p) => glossaryDetail(p.get('id') || p.get('q') || '')
-      || { error: '没有找到该术语' }, 'three-body-atlas: glossary route')
+    register(GLOSSARY_PATH, (p) => glossaryDetail(p.get('id') || p.get('q') || '', {
+      maxTier: p.get('maxTier'),
+    }) || { error: '没有找到该术语' }, 'three-body-atlas: glossary route')
+
+    register(JOURNEY_PATH, (p) => characterJourney(p.get('id') || p.get('q') || '', {
+      maxTier: p.get('maxTier'),
+    }) || { error: '没有找到该角色' }, 'three-body-atlas: journey route')
+
+    register(GUIDE_PATH, (p) => ({ paths: pathGuide({ maxTier: p.get('maxTier') }) }),
+      'three-body-atlas: reading guide route')
+
+    register(CONCEPT_PATH, (p) => conceptGraph({
+      id: p.get('id') || p.get('q') || '',
+      depth: p.get('depth'),
+      maxTier: p.get('maxTier'),
+    }) || { error: '没有找到该概念' }, 'three-body-atlas: concept graph route')
 
     register(GRAPH_PATH, (p) => buildGraph({ faction: p.get('faction') || undefined }),
       'three-body-atlas: graph route')

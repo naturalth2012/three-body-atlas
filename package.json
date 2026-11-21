@@ -45,6 +45,7 @@
     "data/timeline.js",
     "data/plot.js",
     "data/lore.js",
+    "data/spoiler.js",
     "cordis.patch.yml",
     "locale/*.json",
     "docs",

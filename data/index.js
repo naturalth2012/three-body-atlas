@@ -11,6 +11,10 @@ export { WORKS } from './works.js'
 export { ERAS, EVENTS } from './timeline.js'
 export { PLOT, GAME_LEVELS, PATHS, DIFFERENCES, THEMES } from './plot.js'
 export { PLACES, TECH, GLOSSARY, QUOTES } from './lore.js'
+export {
+  WORK_TIER, TIER_LABELS, MAX_TIER, GLOSSARY_TIER, MASKED_FIELDS,
+  tierOfWork, tierOfWorks, maskRecord,
+} from './spoiler.js'
 
 /* ------------------------------------------------------------------ *
  * Lookup tables — built once, shared by every consumer.

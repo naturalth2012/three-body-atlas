@@ -32,6 +32,36 @@ window.__ModuleLoader__.load({
     const SCAN_PATH = BASE + '/stability'
     const FOREST_PATH = BASE + '/dark-forest'
     const DETERRENCE_PATH = BASE + '/deterrence'
+    const JOURNEY_PATH = BASE + '/journey'
+    const GUIDE_PATH = BASE + '/guide'
+    const CONCEPT_PATH = BASE + '/concept'
+
+    /* ------------------------------------------------------------------ *
+     * Reader preferences
+     *
+     * The webview may refuse localStorage (private mode, blocked storage), so
+     * every read falls back to an in-memory value for the session rather than
+     * throwing. Losing a preference is acceptable; losing the page is not.
+     * ------------------------------------------------------------------ */
+
+    const PREF_TIER = 'tba:tier'
+    const PREF_DONE = 'tba:done'
+    const memoryPrefs = {}
+
+    const readPref = (key, fallback) => {
+      try {
+        const raw = window.localStorage.getItem(key)
+        if (raw != null) return raw
+      } catch { /* storage unavailable — fall through to memory */ }
+      return Object.prototype.hasOwnProperty.call(memoryPrefs, key) ? memoryPrefs[key] : fallback
+    }
+
+    const writePref = (key, value) => {
+      memoryPrefs[key] = String(value)
+      try {
+        window.localStorage.setItem(key, String(value))
+      } catch { /* memory copy already holds it */ }
+    }
 
     /* ------------------------------------------------------------------ *
      * Copy
@@ -242,6 +272,57 @@ window.__ModuleLoader__.load({
       deterrenceHoldNo: '破裂',
       deterrenceHumanity: '人类存续',
       footer: '数据为人工整理的三体宇宙导读；细节请以刘慈欣原著与官方作品为准。',
+
+      tabGuide: '导读',
+      tabJourney: '角色视角',
+      tabConcept: '概念图',
+      tierTitle: '我读到第几部',
+      tierHint: '超出进度的人物结局、事件详情会被遮住，避免剧透。',
+      tierAll: '全部展开',
+      tierLocked: '这里涉及{label}的内容',
+      tierUnlock: '仍然展开',
+      tierRestore: '收起',
+      tierSaved: '已记住你的阅读进度',
+      tierCounts: '{c} 位人物 · {e} 个事件',
+      tierPrelude: '前史',
+      tierB1: '第一部',
+      tierB2: '第二部',
+      tierB3: '第三部',
+
+      guideTitle: '按一条线读下去',
+      guideHint: '五条精心编排的路线，每条都说明「为什么这样读」。点一步展开这一部的人物与事件。',
+      guideSteps: '{n} 步',
+      guideStep: '第 {n} 步',
+      guideWhy: '为什么读这一步',
+      guideCast: '涉及人物',
+      guideEvents: '{n} 个事件',
+      guideLocked: '这一步属于{label}，已按你的进度折叠。',
+      guideProgress: '已走 {done}/{total} 步',
+      guideMarkDone: '标记为已读',
+      guideMarkedDone: '已读',
+      guideClear: '清空进度',
+      guideWorks: '这一步读的作品',
+
+      journeyTitle: '角色视角：跟着一个人走完故事',
+      journeyHint: '选一个角色，把他/她经历的事件与情节按顺序排成一条线。同一件事，不同人的重量完全不同。',
+      journeyPick: '选择角色',
+      journeyFocus: '{n} 个节点由他/她主导',
+      journeyTotal: '共 {n} 个情节节点',
+      journeyRoleFocus: '主导',
+      journeyRoleNamed: '被点名',
+      journeyRolePresent: '在场',
+      journeyEmpty: '这个角色没有单独出场的情节节点，属于配角或背景设定。可以从这些关系进入：',
+      journeySpan: '出场跨度',
+      journeySearch: '搜索角色…',
+
+      conceptTitle: '概念如何互相推导',
+      conceptHint: '术语、技术、人物、地点之间的真实引用关系，可逐层展开。',
+      conceptPick: '从任意概念出发',
+      conceptDegree: '{n} 条关联',
+      conceptDepth: '展开层数',
+      conceptNone: '这个概念没有收录关联。',
+      conceptBack: '回到总览',
+      conceptKinds: '术语 / 技术 / 人物 / 地点',
     }
 
     const EN = {
@@ -340,6 +421,57 @@ window.__ModuleLoader__.load({
       deterrenceHoldYes: 'held', deterrenceHoldNo: 'broken',
       deterrenceHumanity: 'Humanity',
       footer: 'Curated reading notes; defer to the novels for fine detail.',
+
+      tabGuide: 'Guide',
+      tabJourney: 'One character',
+      tabConcept: 'Concepts',
+      tierTitle: 'How far have you read?',
+      tierHint: 'Endings and plot detail past your mark are masked so nothing is spoiled.',
+      tierAll: 'Show everything',
+      tierLocked: 'This involves {label}',
+      tierUnlock: 'Reveal anyway',
+      tierRestore: 'Hide again',
+      tierSaved: 'Your reading progress is remembered',
+      tierCounts: '{c} characters · {e} events',
+      tierPrelude: 'Prelude',
+      tierB1: 'Book one',
+      tierB2: 'Book two',
+      tierB3: 'Book three',
+
+      guideTitle: 'Pick one thread and follow it',
+      guideHint: 'Five curated routes, each saying why it is read in that order. Open a step for its cast and events.',
+      guideSteps: '{n} steps',
+      guideStep: 'Step {n}',
+      guideWhy: 'Why this step',
+      guideCast: 'Characters',
+      guideEvents: '{n} events',
+      guideLocked: 'This step belongs to {label} and is folded to match your progress.',
+      guideProgress: '{done}/{total} steps done',
+      guideMarkDone: 'Mark as read',
+      guideMarkedDone: 'Read',
+      guideClear: 'Clear progress',
+      guideWorks: 'What you read here',
+
+      journeyTitle: 'One character, the whole story',
+      journeyHint: 'Pick a character to line up every event and plot beat they live through. The same scene weighs differently to each of them.',
+      journeyPick: 'Choose a character',
+      journeyFocus: '{n} nodes driven by them',
+      journeyTotal: '{n} story nodes',
+      journeyRoleFocus: 'drives it',
+      journeyRoleNamed: 'named',
+      journeyRolePresent: 'present',
+      journeyEmpty: 'This character never drives a scene on their own; they are supporting cast. Enter through these relations:',
+      journeySpan: 'Span',
+      journeySearch: 'Search characters…',
+
+      conceptTitle: 'How the ideas depend on each other',
+      conceptHint: 'The real reference edges between terms, technologies, characters and places, expandable layer by layer.',
+      conceptPick: 'Start from any concept',
+      conceptDegree: '{n} links',
+      conceptDepth: 'Depth',
+      conceptNone: 'No curated links for this concept.',
+      conceptBack: 'Back to overview',
+      conceptKinds: 'terms / tech / people / places',
     }
 
     const isEnglish = (locale) => {
@@ -588,11 +720,129 @@ window.__ModuleLoader__.load({
         .tba-benchfield{display:inline-flex;align-items:center;gap:4px}
         .tba-benchfield span{color:var(--dsw-alias-label-secondary);font-size:11px;width:16px}
         .tba-benchinput{width:76px;padding:4px 6px;font-size:12px;font-variant-numeric:tabular-nums}
+
+        /* Spoiler picker */
+        .tba-tier{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 14px}
+        .tba-tierlabel{font-size:12px;color:var(--dsw-alias-label-secondary);margin-right:2px}
+        .tba-tierbtn{font:inherit;font-size:12.5px;padding:5px 11px;border-radius:999px;cursor:pointer;
+          border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);
+          color:var(--dsw-alias-label-secondary);transition:all .15s}
+        .tba-tierbtn:hover{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary)}
+        .tba-tierbtn.tba-on{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);
+          color:var(--dsw-alias-label-onbrand, #fff);font-weight:600}
+        .tba-tierhint{font-size:11.5px;color:var(--dsw-alias-label-secondary);opacity:.8;margin:-8px 0 14px}
+        .tba-locked{position:relative;border-radius:10px;padding:12px 13px;
+          border:1px dashed var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1)}
+        .tba-lockedmsg{display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+          font-size:12.5px;color:var(--dsw-alias-label-secondary)}
+        .tba-lockedblur{filter:blur(4px);opacity:.4;pointer-events:none;user-select:none;
+          font-size:12.6px;line-height:1.7;margin-top:6px}
+
+        /* Reading guide */
+        .tba-guide{margin-bottom:18px}
+        .tba-guidehead{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;margin-bottom:4px}
+        .tba-guidehead h3{margin:0;font-size:15px}
+        .tba-guideblurb{margin:0 0 10px;font-size:12.6px;color:var(--dsw-alias-label-secondary)}
+        .tba-guidesteps{display:flex;flex-direction:column;gap:8px}
+        .tba-guidestep{display:flex;gap:11px;align-items:flex-start;padding:11px 13px;border-radius:10px;
+          border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1)}
+        .tba-guidestep.tba-done{border-color:var(--dsw-alias-state-success-primary);opacity:.85}
+        .tba-guidestep.tba-lockedstep{opacity:.6}
+        .tba-guidenum{flex:0 0 24px;height:24px;border-radius:50%;display:grid;place-items:center;
+          font-size:11.5px;font-weight:700;background:var(--dsw-alias-bg-layer-2);
+          color:var(--dsw-alias-label-secondary)}
+        .tba-guidestep.tba-done .tba-guidenum{background:var(--dsw-alias-state-success-primary);
+          color:var(--dsw-alias-label-onbrand, #fff)}
+        .tba-guidebody{flex:1;min-width:0}
+        .tba-guidetitle{font-size:13.5px;font-weight:650;margin-bottom:3px;display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+        .tba-guidewhy{margin:0;font-size:12.4px;color:var(--dsw-alias-label-secondary);line-height:1.65}
+        .tba-guidecast{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+        .tba-guideprog{height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-2);overflow:hidden;margin:8px 0 14px}
+        .tba-guideprog i{display:block;height:100%;background:var(--dsw-alias-brand-primary);border-radius:3px}
+
+        /* Character journey */
+        .tba-journey{display:flex;flex-direction:column;gap:0}
+        .tba-jnode{display:flex;gap:12px;padding:11px 0}
+        .tba-jline{flex:0 0 14px;display:flex;flex-direction:column;align-items:center}
+        .tba-jdot{width:9px;height:9px;border-radius:50%;background:var(--dsw-alias-border-l1);margin-top:5px}
+        .tba-jdot[data-role='focus']{background:var(--dsw-alias-brand-primary);box-shadow:0 0 0 3px rgba(93,124,156,.18)}
+        .tba-jdot[data-role='named']{background:var(--dsw-alias-state-warn-primary)}
+        .tba-jstem{flex:1;width:1px;background:var(--dsw-alias-border-l1);margin-top:4px}
+        .tba-jbody{flex:1;min-width:0}
+        .tba-jtitle{font-size:13.2px;font-weight:620;margin-bottom:3px;display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+        .tba-jdesc{margin:0;font-size:12.5px;color:var(--dsw-alias-label-secondary);line-height:1.7}
+        .tba-jmeta{font-size:11.5px;color:var(--dsw-alias-label-secondary);opacity:.85;margin-top:4px;
+          font-variant-numeric:tabular-nums}
+        .tba-jchapter{font-size:12.5px;font-weight:700;color:var(--dsw-alias-brand-primary);
+          padding:14px 0 4px;border-bottom:1px solid var(--dsw-alias-border-l1);margin-bottom:4px}
+
+        /* Concept graph */
+        .tba-conceptgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:9px}
+        .tba-conceptnode{text-align:left;font:inherit;cursor:pointer;padding:11px 12px;border-radius:10px;
+          border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);transition:all .15s}
+        .tba-conceptnode:hover{border-color:var(--dsw-alias-brand-primary)}
+        .tba-conceptnode[data-kind='tech']{border-left:3px solid var(--dsw-alias-state-warn-primary)}
+        .tba-conceptnode[data-kind='character']{border-left:3px solid var(--dsw-alias-brand-primary)}
+        .tba-conceptnode[data-kind='place']{border-left:3px solid var(--dsw-alias-state-success-primary)}
+        .tba-conceptname{font-size:13.2px;font-weight:640;margin-bottom:3px}
+        .tba-conceptsum{margin:0;font-size:12.2px;color:var(--dsw-alias-label-secondary);line-height:1.6}
+        .tba-conceptmeta{font-size:11px;color:var(--dsw-alias-label-secondary);opacity:.8;margin-top:5px}
+        .tba-edge{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12.4px;
+          padding:6px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
+        .tba-edgearrow{color:var(--dsw-alias-label-secondary);opacity:.7}
       `
       document.head.appendChild(style)
       return () => {
         if (style.parentNode) style.parentNode.removeChild(style)
       }
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Spoiler picker
+     * ------------------------------------------------------------------ */
+
+    const TIER_KEYS = ['tierPrelude', 'tierB1', 'tierB2', 'tierB3']
+
+    const TierPicker = ({ tiers, value, onChange, t }) => {
+      const list = (tiers && tiers.length ? tiers : []).map((tier) => ({
+        ...tier,
+        label: t(TIER_KEYS[tier.tier] || 'tierAll'),
+      }))
+      return h('div', null,
+        h('div', { className: 'tba-tier' },
+          h('span', { className: 'tba-tierlabel' }, t('tierTitle')),
+          ...list.map((tier) => h('button', {
+            key: tier.tier,
+            className: 'tba-tierbtn' + (value === tier.tier ? ' tba-on' : ''),
+            onClick: () => onChange(tier.tier),
+            title: tier.hint,
+          }, tier.label)),
+          h('button', {
+            className: 'tba-tierbtn' + (value >= 3 ? ' tba-on' : ''),
+            onClick: () => onChange(3),
+          }, t('tierAll'))),
+        h('div', { className: 'tba-tierhint' },
+          value >= 3 ? t('tierHint') : t('tierCounts', {
+            c: (list.find((x) => x.tier === value) || {}).characters || 0,
+            e: (list.find((x) => x.tier === value) || {}).events || 0,
+          })))
+    }
+
+    /** A masked block: shows that something exists without telling how it ends. */
+    const Locked = ({ tier, t, onReveal, children }) => {
+      const [open, setOpen] = React.useState(false)
+      const label = t(TIER_KEYS[tier] || 'tierB3')
+      if (open && children) return h('div', null,
+        children,
+        h('button', { className: 'tba-chip', style: { marginTop: 8 }, onClick: () => setOpen(false) },
+          t('tierRestore')))
+      return h('div', { className: 'tba-locked' },
+        h('div', { className: 'tba-lockedmsg' },
+          h('span', null, '🔒 ' + t('tierLocked', { label })),
+          onReveal
+            ? h('button', { className: 'tba-chip', onClick: onReveal }, t('tierUnlock'))
+            : h('button', { className: 'tba-chip', onClick: () => setOpen(true) }, t('tierUnlock'))),
+        h('div', { className: 'tba-lockedblur' }, '（剧透内容已遮蔽 · spoiler masked）'))
     }
 
     /* ------------------------------------------------------------------ *
@@ -631,7 +881,20 @@ window.__ModuleLoader__.load({
     /* ------------------------------------------------------------------ *
      * Drawer — one dossier, four shapes
      * ------------------------------------------------------------------ */
-    const renderDossierBody = ({ kind, payload: d, data, t, onOpen }) => {
+    const renderDossierBody = ({ kind, payload: d, data, t, onOpen, onReveal }) => {
+      // A locked record keeps its title so the reader knows the entry exists,
+      // but every long field was stripped by the engine. Say so plainly rather
+      // than rendering an empty dossier.
+      if (d.locked) {
+        const label = t(TIER_KEYS[d.tier] || 'tierB3')
+        const title = d.name || d.term || d.title || ''
+        return h(React.Fragment, null,
+          h('h2', null, title),
+          d.nameEn || d.termEn ? h('div', { className: 'tba-den' }, d.nameEn || d.termEn) : null,
+          h(Locked, { tier: d.tier, t, onReveal },
+            h('div', { className: 'tba-section' },
+              h('p', { className: 'tba-p' }, d.summary || d.definition || ''))))
+      }
       if (kind === 'place') {
         return h(React.Fragment, null,
           h('div', { style: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' } },
@@ -693,7 +956,11 @@ window.__ModuleLoader__.load({
               ...d.related.map((r) => h('div', {
                 key: r.id, className: 'tba-miniitem',
                 onClick: () => onOpen(r.kindKey || 'glossary', r.id),
-              }, h('div', null, h('b', null, r.name), h('small', null, r.kind || '')))))
+              }, h('div', null,
+                h('b', null, r.name),
+                h('small', null, r.locked
+                  ? '🔒 ' + t('tierLocked', { label: t(TIER_KEYS[r.tier] || 'tierB3') })
+                  : (r.kind || ''))))))
             : null)
       }
 
@@ -722,7 +989,9 @@ window.__ModuleLoader__.load({
               }, r.typeLabel),
               h('div', null,
                 h('b', { style: { cursor: 'pointer' }, onClick: () => onOpen('character', r.to) }, r.name),
-                h('small', null, r.label))))
+                r.locked
+                  ? h('small', null, '🔒 ' + t('tierLocked', { label: t(TIER_KEYS[r.tier] || 'tierB3') }))
+                  : h('small', null, r.label))))
             : h('p', { className: 'tba-p' }, t('noRelations'))),
         h('div', { className: 'tba-section' }, h('h4', null, t('works')),
           ...d.works.map((w) => h('div', { key: w.id, className: 'tba-workitem' },
@@ -757,20 +1026,26 @@ window.__ModuleLoader__.load({
           : null)
     }
 
-    const Drawer = ({ kind, id, data, t, onClose, onOpen }) => {
+    const Drawer = ({ kind, id, data, t, tier, onClose, onOpen }) => {
       const [payload, setPayload] = React.useState(null)
       const [failed, setFailed] = React.useState(false)
+      // Per-dossier override: a reader may choose to see one entry in full
+      // without lowering the ceiling for the whole app.
+      const [revealed, setRevealed] = React.useState(false)
+
+      React.useEffect(() => { setRevealed(false) }, [kind, id])
 
       React.useEffect(() => {
         let alive = true
         setPayload(null); setFailed(false)
         const path = kind === 'place' ? PLACE_PATH : kind === 'tech' ? TECH_PATH
           : kind === 'glossary' ? GLOSSARY_PATH : DETAIL_PATH
-        getJSON(path + '?id=' + encodeURIComponent(id))
+        const cap = revealed ? 3 : (tier == null ? 3 : tier)
+        getJSON(path + '?id=' + encodeURIComponent(id) + '&maxTier=' + cap)
           .then((d) => { if (alive) { if (d && d.error) setFailed(true); else setPayload(d) } })
           .catch(() => { if (alive) setFailed(true) })
         return () => { alive = false }
-      }, [kind, id])
+      }, [kind, id, tier, revealed])
 
       React.useEffect(() => {
         const onKey = (e) => { if (e.key === 'Escape') onClose() }
@@ -783,7 +1058,10 @@ window.__ModuleLoader__.load({
       else if (!payload) {
         body = h('div', { className: 'tba-loading', style: { height: 'auto', paddingTop: 40 } },
           h('div', { className: 'tba-spin' }, '🛰️'), h('div', null, t('loading')))
-      } else body = renderDossierBody({ kind, payload, data, t, onOpen })
+      } else body = renderDossierBody({
+        kind, payload, data, t, onOpen,
+        onReveal: payload && payload.locked ? () => setRevealed(true) : null,
+      })
 
       return h('div', { className: 'tba-drawer-back', onClick: onClose },
         h('div', {
@@ -2346,6 +2624,260 @@ window.__ModuleLoader__.load({
       return blocks
     }
 
+    /* ------------------------------------------------------------------ *
+     * Reading guide
+     * ------------------------------------------------------------------ */
+
+    const GuideTab = ({ data, t, tier }) => {
+      const guides = data.guides || []
+      const [done, setDone] = React.useState(() => {
+        try {
+          const raw = readPref(PREF_DONE, '[]')
+          const parsed = JSON.parse(raw)
+          return Array.isArray(parsed) ? parsed : []
+        } catch { return [] }
+      })
+
+      const keyOf = (pathId, index) => pathId + ':' + index
+      const isDone = (pathId, index) => done.includes(keyOf(pathId, index))
+      const toggle = (pathId, index) => {
+        const key = keyOf(pathId, index)
+        const next = done.includes(key) ? done.filter((x) => x !== key) : [...done, key]
+        setDone(next)
+        writePref(PREF_DONE, JSON.stringify(next))
+      }
+      const clear = () => { setDone([]); writePref(PREF_DONE, '[]') }
+
+      const total = guides.reduce((sum, g) => sum + g.steps.length, 0)
+      const doneCount = done.length
+
+      return h('div', null,
+        h('h2', { className: 'tba-h2' }, '🧭 ' + t('guideTitle')),
+        h('p', { className: 'tba-p', style: { marginBottom: 12 } }, t('guideHint')),
+        h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 } },
+          h('span', { className: 'tba-badge' }, t('guideProgress', { done: doneCount, total })),
+          doneCount ? h('button', { className: 'tba-chip', onClick: clear }, t('guideClear')) : null),
+        h('div', { className: 'tba-guideprog' },
+          h('i', { style: { width: (total ? Math.round((doneCount / total) * 100) : 0) + '%' } })),
+
+        ...guides.map((g) => h('div', { key: g.id, className: 'tba-guide' },
+          h('div', { className: 'tba-guidehead' },
+            h('h3', null, (g.icon || '') + ' ' + g.name),
+            h('span', { className: 'tba-badge' }, t('guideSteps', { n: g.steps.length }))),
+          h('p', { className: 'tba-guideblurb' }, g.blurb),
+          h('div', { className: 'tba-guidesteps' },
+            ...g.steps.map((step) => {
+              const finished = isDone(g.id, step.index)
+              return h('div', {
+                key: step.index,
+                className: 'tba-guidestep' + (finished ? ' tba-done' : '') + (step.locked ? ' tba-lockedstep' : ''),
+              },
+                h('div', { className: 'tba-guidenum' }, finished ? '✓' : String(step.index)),
+                h('div', { className: 'tba-guidebody' },
+                  h('div', { className: 'tba-guidetitle' },
+                    h('span', null, step.title),
+                    step.kind ? h('span', { className: 'tba-badge' }, step.kind) : null,
+                    step.year ? h('span', { className: 'tba-badge' }, String(step.year)) : null,
+                    h('span', { className: 'tba-badge' }, t('guideEvents', { n: step.eventCount }))),
+                  h('p', { className: 'tba-guidewhy' }, step.why),
+                  step.locked
+                    ? h('div', { className: 'tba-guidewhy', style: { marginTop: 6, opacity: .75 } },
+                      '🔒 ' + t('guideLocked', { label: t(TIER_KEYS[step.tier] || 'tierB3') }))
+                    : (step.cast && step.cast.length
+                      ? h('div', { className: 'tba-guidecast' },
+                        ...step.cast.map((c) => h('span', { key: c.id, className: 'tba-chip' }, c.name)))
+                      : null),
+                  h('button', {
+                    className: 'tba-chip',
+                    style: { marginTop: 8 },
+                    onClick: () => toggle(g.id, step.index),
+                  }, finished ? t('guideMarkedDone') : t('guideMarkDone'))))
+            })))))
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Character journey
+     * ------------------------------------------------------------------ */
+
+    const JourneyTab = ({ data, t, tier, open }) => {
+      const characters = (data.characters || []).slice().sort((a, b) => {
+        const na = (a.relations || []).length
+        const nb = (b.relations || []).length
+        return nb - na
+      })
+      const [picked, setPicked] = React.useState('')
+      const [query, setQuery] = React.useState('')
+      const [journey, setJourney] = React.useState(null)
+      const [busy, setBusy] = React.useState(false)
+
+      React.useEffect(() => {
+        if (!picked) { setJourney(null); return }
+        let alive = true
+        setBusy(true)
+        getJSON(JOURNEY_PATH + '?id=' + encodeURIComponent(picked) + '&maxTier=' + tier)
+          .then((r) => { if (alive) setJourney(r && r.error ? null : r) })
+          .catch(() => { if (alive) setJourney(null) })
+          .finally(() => { if (alive) setBusy(false) })
+        return () => { alive = false }
+      }, [picked, tier])
+
+      const filtered = query
+        ? characters.filter((c) => (c.name + ' ' + (c.nameEn || '') + ' ' + (c.alias || []).join(' '))
+          .toLowerCase().includes(query.toLowerCase()))
+        : characters
+
+      const roleBadge = { focus: 'journeyRoleFocus', named: 'journeyRoleNamed', present: 'journeyRolePresent' }
+
+      let body = null
+      if (busy) {
+        body = h('div', { className: 'tba-loading', style: { height: 'auto', paddingTop: 30 } },
+          h('div', { className: 'tba-spin' }, '🛰️'), h('div', null, t('loading')))
+      } else if (journey && !journey.hasStory) {
+        body = h('div', { className: 'tba-empty' },
+          h('div', { className: 'tba-eicon' }, '👥'),
+          h('div', null, t('journeyEmpty')),
+          h('div', { className: 'tba-chips', style: { justifyContent: 'center', marginTop: 10 } },
+            ...(journey.neighbours || []).map((n) => h('button', {
+              key: n.id, className: 'tba-chip', onClick: () => open('character', n.id),
+            }, n.name))))
+      } else if (journey) {
+        const nodes = journey.nodes || []
+        let lastWork = ''
+        body = h('div', null,
+          h('div', { className: 'tba-jhead', style: { marginBottom: 12 } },
+            h('h3', { style: { margin: '0 0 4px', fontSize: 16 } }, journey.character.name),
+            h('div', { style: { fontSize: 12.6, color: 'var(--dsw-alias-label-secondary)' } },
+              journey.character.factionLabel,
+              journey.character.firstWorkTitle ? ' · ' + t('journeySpan') + '：' + journey.character.firstWorkTitle : ''),
+            h('div', { className: 'tba-chips', style: { marginTop: 8, marginBottom: 0 } },
+              h('span', { className: 'tba-badge' }, t('journeyTotal', { n: journey.total })),
+              h('span', { className: 'tba-badge' }, t('journeyFocus', { n: journey.focusCount })))),
+          h('div', { className: 'tba-journey' },
+            ...nodes.map((node, i) => {
+              const parts = []
+              if (node.workTitle && node.workTitle !== lastWork) {
+                lastWork = node.workTitle
+                parts.push(h('div', { key: 'c' + i, className: 'tba-jchapter' }, node.workTitle))
+              }
+              parts.push(h('div', { key: node.kind + node.id + i, className: 'tba-jnode' },
+                h('div', { className: 'tba-jline' },
+                  h('div', { className: 'tba-jdot', 'data-role': node.role }),
+                  h('div', { className: 'tba-jstem' })),
+                h('div', { className: 'tba-jbody' },
+                  h('div', { className: 'tba-jtitle' },
+                    h('span', null, node.title),
+                    h('span', { className: 'tba-badge' }, t(roleBadge[node.role] || 'journeyRolePresent'))),
+                  node.locked
+                    ? h('div', { className: 'tba-lockedmsg', style: { marginTop: 4 } },
+                      '🔒 ' + t('tierLocked', { label: t(TIER_KEYS[node.tier] || 'tierB3') }))
+                    : (node.desc ? h('p', { className: 'tba-jdesc' }, node.desc) : null),
+                  h('div', { className: 'tba-jmeta' },
+                    [node.year, node.eraName, node.people ? node.people.slice(0, 4).join('、') : '']
+                      .filter(Boolean).join(' · ')))))
+              return parts
+            })))
+      }
+
+      return h('div', null,
+        h('h2', { className: 'tba-h2' }, '👤 ' + t('journeyTitle')),
+        h('p', { className: 'tba-p', style: { marginBottom: 12 } }, t('journeyHint')),
+        h('div', { className: 'tba-pathrow', style: { marginBottom: 10 } },
+          h('input', {
+            className: 'tba-input tba-grow', value: query, placeholder: t('journeySearch'),
+            onChange: (e) => setQuery(e.target.value),
+          })),
+        h('div', { className: 'tba-chips', style: { marginBottom: 16 } },
+          ...filtered.slice(0, 24).map((c) => h('button', {
+            key: c.id,
+            className: 'tba-chip' + (picked === c.id ? ' tba-on' : ''),
+            onClick: () => setPicked(c.id),
+          }, c.name))),
+        body)
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Concept graph
+     * ------------------------------------------------------------------ */
+
+    const ConceptTab = ({ t, tier, open }) => {
+      const [rootId, setRootId] = React.useState('')
+      const [depth, setDepth] = React.useState(2)
+      const [graph, setGraph] = React.useState(null)
+      const [busy, setBusy] = React.useState(false)
+
+      React.useEffect(() => {
+        let alive = true
+        setBusy(true)
+        const url = CONCEPT_PATH + '?depth=' + depth + '&maxTier=' + tier
+          + (rootId ? '&id=' + encodeURIComponent(rootId) : '')
+        getJSON(url)
+          .then((r) => { if (alive) setGraph(r && r.error ? null : r) })
+          .catch(() => { if (alive) setGraph(null) })
+          .finally(() => { if (alive) setBusy(false) })
+        return () => { alive = false }
+      }, [rootId, depth, tier])
+
+      const kindLabel = { glossary: '术语', tech: '技术', character: '人物', place: '地点' }
+      const nodeButton = (node) => h('button', {
+        key: node.id,
+        className: 'tba-conceptnode',
+        'data-kind': node.kind,
+        onClick: () => (node.kind === 'glossary' ? setRootId(node.id) : open(node.kind, node.id)),
+      },
+        h('div', { className: 'tba-conceptname' }, node.name),
+        node.locked
+          ? h('p', { className: 'tba-conceptsum' }, '🔒 ' + t('tierLocked', { label: t(TIER_KEYS[node.tier] || 'tierB3') }))
+          : (node.summary ? h('p', { className: 'tba-conceptsum' }, node.summary) : null),
+        h('div', { className: 'tba-conceptmeta' },
+          [kindLabel[node.kind] || node.kind, node.category,
+            typeof node.degree === 'number' ? t('conceptDegree', { n: node.degree }) : '']
+            .filter(Boolean).join(' · ')))
+
+      let body = null
+      if (busy) {
+        body = h('div', { className: 'tba-loading', style: { height: 'auto', paddingTop: 30 } },
+          h('div', { className: 'tba-spin' }, '🛰️'), h('div', null, t('loading')))
+      } else if (!graph) {
+        body = h(Empty, { t, icon: '🕸️' })
+      } else if (!graph.root) {
+        body = h('div', { className: 'tba-conceptgrid' }, ...(graph.nodes || []).map(nodeButton))
+      } else {
+        body = h('div', null,
+          h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 } },
+            h('h3', { style: { margin: 0, fontSize: 16 } }, graph.root.name),
+            h('button', { className: 'tba-chip', onClick: () => setRootId('') }, t('conceptBack'))),
+          graph.root.summary ? h('p', { className: 'tba-p', style: { marginBottom: 12 } }, graph.root.summary) : null,
+          h('div', { className: 'tba-conceptgrid', style: { marginBottom: 16 } },
+            ...(graph.nodes || []).filter((n) => n.id !== graph.root.id).map(nodeButton)),
+          (graph.edges || []).length
+            ? h('div', null,
+              h('h4', { className: 'tba-h3sm', style: { fontSize: 13 } }, '🔗 ' + t('conceptKinds')),
+              ...(graph.edges || []).map((e, i) => {
+                const from = (graph.nodes || []).find((n) => n.id === e.from)
+                const to = (graph.nodes || []).find((n) => n.id === e.to)
+                if (!from || !to) return null
+                return h('div', { key: i, className: 'tba-edge' },
+                  h('span', null, from.name),
+                  h('span', { className: 'tba-edgearrow' }, '→'),
+                  h('span', null, to.name),
+                  h('span', { className: 'tba-badge' }, kindLabel[to.kind] || to.kind))
+              }))
+            : h('div', { className: 'tba-empty' }, t('conceptNone')))
+      }
+
+      return h('div', null,
+        h('h2', { className: 'tba-h2' }, '🕸️ ' + t('conceptTitle')),
+        h('p', { className: 'tba-p', style: { marginBottom: 12 } }, t('conceptHint')),
+        h('div', { className: 'tba-pathrow', style: { marginBottom: 14 } },
+          h('span', { className: 'tba-tierlabel' }, t('conceptDepth')),
+          ...[1, 2, 3].map((d) => h('button', {
+            key: d,
+            className: 'tba-tierbtn' + (depth === d ? ' tba-on' : ''),
+            onClick: () => setDepth(d),
+          }, String(d)))),
+        body)
+    }
+
     const AskTab = ({ t }) => {
       const [q, setQ] = React.useState('')
       const [answer, setAnswer] = React.useState('')
@@ -2399,6 +2931,17 @@ window.__ModuleLoader__.load({
       const [error, setError] = React.useState(false)
       const [tab, setTab] = React.useState('overview')
       const [drawer, setDrawer] = React.useState(null)
+      // Default to "everything visible": a first-time reader should not meet a
+      // wall of locks. The picker narrows it, and the choice is remembered.
+      const [tier, setTierState] = React.useState(() => {
+        const raw = readPref(PREF_TIER, '3')
+        const n = Number(raw)
+        return Number.isFinite(n) ? Math.min(3, Math.max(0, n)) : 3
+      })
+      const setTier = (value) => {
+        setTierState(value)
+        writePref(PREF_TIER, value)
+      }
 
       const load = () => {
         setError(false); setData(null)
@@ -2431,9 +2974,12 @@ window.__ModuleLoader__.load({
 
       const tabs = [
         ['overview', '🧭 ' + t('tabOverview')],
+        ['guide', '📔 ' + t('tabGuide')],
         ['plot', '📖 ' + t('tabPlot')],
         ['characters', '👤 ' + t('tabCharacters')],
+        ['journey', '🎭 ' + t('tabJourney')],
         ['graph', '🕸️ ' + t('tabGraph')],
+        ['concept', '🔗 ' + t('tabConcept')],
         ['timeline', '📜 ' + t('tabTimeline')],
         ['game', '🕹️ ' + t('tabGame')],
         ['sim', '☄️ ' + t('tabSim')],
@@ -2461,10 +3007,15 @@ window.__ModuleLoader__.load({
               'aria-selected': tab === id,
               onClick: () => go(id),
             }, label))),
+          h('div', { style: { padding: '0 18px' } },
+            h(TierPicker, { tiers: data.tiers, value: tier, onChange: setTier, t })),
           tab === 'overview' && h(OverviewTab, { data, t, go, open }),
+          tab === 'guide' && h(GuideTab, { data, t, tier }),
           tab === 'plot' && h(PlotTab, { data, t, open }),
           tab === 'characters' && h(CharactersTab, { data, t, open, go }),
+          tab === 'journey' && h(JourneyTab, { data, t, tier, open }),
           tab === 'graph' && h(GraphTab, { data, t, open }),
+          tab === 'concept' && h(ConceptTab, { t, tier, open }),
           tab === 'timeline' && h(TimelineTab, { data, t }),
           tab === 'game' && h(GameTab, { data, t }),
           tab === 'sim' && h(SimTab, { data, t }),
@@ -2476,7 +3027,7 @@ window.__ModuleLoader__.load({
           tab === 'ask' && h(AskTab, { t }),
           h('div', { className: 'tba-footer' }, t('footer'))),
         drawer && h(Drawer, {
-          kind: drawer.kind, id: drawer.id, data, t,
+          kind: drawer.kind, id: drawer.id, data, t, tier,
           onClose: () => setDrawer(null),
           onOpen: (kind, id) => setDrawer({ kind, id }),
         }))
