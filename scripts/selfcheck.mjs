@@ -517,6 +517,37 @@ const expectedTools = [
   'three_body_theme', 'three_body_timeline',
 ]
 assert(JSON.stringify(toolNames) === JSON.stringify(expectedTools), `注册的工具：${toolNames.join(', ')}`)
+
+// The storefront description is read as a claim about the plugin and is checked
+// against the code, so a stale tool count is a real defect, not a typo. Keep the
+// prose and the registrations in step.
+{
+  const fs = await import('node:fs')
+  const zh = JSON.parse(fs.readFileSync(new URL('../locale/zh.json', import.meta.url), 'utf8'))
+  const en = JSON.parse(fs.readFileSync(new URL('../locale/en.json', import.meta.url), 'utf8'))
+  const zhCount = Number((zh.meta.description.match(/注册 (\d+) 个工具/) || [])[1])
+  // The English prose spells the number out ("Ten agent tools"), so map words.
+  const WORDS = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 }
+  const enRaw = (en.meta.description.match(/([A-Za-z]+|\d+) agent tools/) || [])[1] || ''
+  const enCount = /^\d+$/.test(enRaw) ? Number(enRaw) : WORDS[enRaw.toLowerCase()]
+  assert(zhCount === expectedTools.length, `中文描述声明的工具数与实际一致（${zhCount}）`)
+  assert(enCount === expectedTools.length, `英文描述声明的工具数与实际一致（${enCount}）`)
+  // Every tool named in the prose must actually exist.
+  for (const name of ['search', 'detail', 'journey', 'concept', 'relation', 'timeline', 'simulate', 'theme', 'game', 'ask']) {
+    assert(zh.meta.description.includes(name), `中文描述提到 ${name}`)
+  }
+  assert(zh.meta.detail && en.meta.detail, '两种语言都声明了详情文档')
+
+  // A detail document must be exactly one image line, per the plugin-details spec.
+  for (const rel of [zh.meta.detail, en.meta.detail]) {
+    const doc = fs.readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8').trim()
+    const lines = doc.split('\n').filter((l) => l.trim())
+    assert(lines.length === 1 && /^!\[[^\]]+\]\([^)]+\)$/.test(lines[0]),
+      `详情文档 ${rel} 只有一行图片`)
+    const img = lines[0].match(/\(([^)]+)\)/)[1]
+    assert(fs.existsSync(new URL(`../docs/${img}`, import.meta.url)), `详情文档引用的图片 ${img} 存在`)
+  }
+}
 for (const def of registrations) {
   assert(typeof def.description === 'string' && def.description.length > 20, `工具 ${def.name} 有说明`)
   assert(def.parameters && def.parameters.type === 'object', `工具 ${def.name} 有参数 schema`)
