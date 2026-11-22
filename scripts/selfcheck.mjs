@@ -280,6 +280,82 @@ assert(scan.samples === 20, '稳定性普查按样本数返回')
 assert(Object.values(scan.share).reduce((a, b) => a + b, 0) > 99, '稳定性普查占比合计约 100%')
 assert(scan.buckets.stable < 20, '稳定性普查里稳定只是少数')
 
+console.log('\n## 文明史普查')
+
+// The census is the answer to "the simulation never shows the whole arc": one
+// integration covers a fraction of an orbit, so the honest presentation is a
+// distribution over many real integrations. These assertions pin the properties
+// that make that claim trustworthy.
+{
+  const total = 12
+  const oneShot = S.civilizationCensus({ samples: total, offset: 0, limit: total, steps: 4000 })
+  assert(oneShot.done === true, '一次性普查标记完成')
+  assert(oneShot.next === null, '一次性普查没有下一批')
+  assert(oneShot.points.length === total, `一次性普查返回 ${total} 个样本`)
+  assert(oneShot.aggregate && oneShot.aggregate.samples === total, '聚合覆盖全部样本')
+
+  // Batched walk must reproduce the one-shot rows exactly, because the client
+  // stitches batches together and cannot tell if an offset boundary duplicated
+  // or dropped a sample.
+  const collected = []
+  let offset = 0
+  let batch = null
+  let guard = 0
+  do {
+    batch = S.civilizationCensus({ samples: total, offset, limit: 5, steps: 4000, collected })
+    collected.push(...batch.points)
+    if (batch.next !== null) offset = batch.next
+    guard++
+  } while (!batch.done && guard < 20)
+  assert(collected.length === total, '分批拼接的样本数等于总数')
+  assert(new Set(collected.map((p) => p.index)).size === total, '分批拼接没有重复样本')
+  assert(
+    JSON.stringify(collected.map((p) => p.generations)) === JSON.stringify(oneShot.points.map((p) => p.generations)),
+    '分批拼接的代数序列与一次性全量一致',
+  )
+  // The batched caller hands its rows back on the final call and the Host folds
+  // them arithmetically (no re-integration), so the batched aggregate must equal
+  // the one-shot aggregate exactly — same rows in, same numbers out.
+  assert(batch.aggregate !== undefined, '分批调用返回聚合（Host 对回传行做算术折叠）')
+  assert(batch.aggregate.mean === oneShot.aggregate.mean, `分批聚合均值 ${batch.aggregate.mean} 与一次性全量一致`)
+  assert(batch.aggregate.max === oneShot.aggregate.max, '分批聚合最大值与一次性全量一致')
+  assert(batch.aggregate.samples === total, '分批聚合覆盖全部样本')
+  assert(batch.complete === true, '分批聚合标记为完整')
+
+  // Determinism: a sample is a pure function of (seed, index), which is what
+  // lets a batch start at an arbitrary offset.
+  const a = S.civilizationCensus({ samples: 8, offset: 4, limit: 4, steps: 4000 })
+  const b = S.civilizationCensus({ samples: 8, offset: 4, limit: 4, steps: 4000 })
+  assert(JSON.stringify(a.points) === JSON.stringify(b.points), '同一 offset 的普查可复现')
+
+  // Aggregate arithmetic must be self-consistent, not merely plausible.
+  const agg = oneShot.aggregate
+  const histTotal = Object.values(agg.histogram).reduce((x, y) => x + y, 0)
+  assert(histTotal === total, `直方图总和 ${histTotal} 等于样本数 ${total}`)
+  const manualMean = oneShot.points.reduce((s, p) => s + p.generations, 0) / total
+  assert(Math.abs(agg.mean - manualMean) < 0.01, `聚合均值 ${agg.mean} 与逐项均值 ${manualMean.toFixed(2)} 一致`)
+  assert(agg.max === Math.max(...oneShot.points.map((p) => p.generations)), '聚合最大值与逐项最大值一致')
+  assert(agg.byOutcome && Object.values(agg.byOutcome).reduce((s, v) => s + v.n, 0) === total,
+    '结局分组的样本数合计等于总数')
+  assert(agg.correlation >= -1 && agg.correlation <= 1, `相关系数 ${agg.correlation} 落在 [-1, 1]`)
+  assert(typeof agg.verdict === 'string' && agg.verdict.length > 10, '普查给出结论文字')
+
+  // The wording must not pass a random sweep off as one planet's real history.
+  assert(!/真实历史|真正的历史/.test(agg.verdict), '普查结论不把分布说成单一历史')
+  assert(/积分/.test(agg.verdict), '普查结论说明每样本都是真实积分')
+
+  // A partial batch must not hand back an aggregate: a half-finished mean is
+  // easy to mistake for the answer.
+  const partial = S.civilizationCensus({ samples: 12, offset: 0, limit: 5, steps: 4000 })
+  assert(partial.done === false && partial.aggregate === undefined, '未完成的批次不返回聚合')
+  assert(partial.next === 5, '未完成的批次给出下一个 offset')
+
+  // Clamping keeps a hostile caller from asking for an unbounded sweep.
+  const clamped = S.civilizationCensus({ samples: 100000, offset: 0, limit: 1000, steps: 4000 })
+  assert(clamped.total <= 120, `样本数被夹到上限（实测 ${clamped.total}）`)
+  assert(clamped.points.length <= 24, `单批上限生效（实测 ${clamped.points.length}）`)
+}
+
 const forest = S.darkForest({ civs: 30, rounds: 80 })
 assert(forest.history.length > 0, '黑暗森林推演产生历史')
 assert(forest.survivors.length <= 30, '黑暗森林存活数不超过初始文明数')
@@ -497,6 +573,61 @@ for (const locale of ['zh', 'en']) {
   }
 }
 
+// The sidebar dictionaries are inline object literals, not JSON, so nothing above
+// covers them. A key present in only one language falls back to the key name and
+// the panel renders `censusMean` instead of a label — silent, and easy to miss in
+// a screenshot. Walk the literals by brace depth (a naive scan stops at the first
+// nested object and invents hundreds of phantom misses) and require every key the
+// Client asks for in both.
+{
+  const clientSrc = fs.readFileSync(path.join(root, 'client.js'), 'utf8')
+  const dictKeys = (name) => {
+    const marker = `const ${name} = {`
+    const start = clientSrc.indexOf(marker)
+    if (start < 0) return new Set()
+    let i = start + marker.length - 1
+    let depth = 0
+    let atKeyStart = true
+    const out = new Set()
+    while (i < clientSrc.length) {
+      const ch = clientSrc[i]
+      if (ch === '{') { depth++; atKeyStart = depth === 1; i++; continue }
+      if (ch === '}') { depth--; if (depth === 0) break; i++; continue }
+      if (ch === "'" || ch === '"' || ch === '`') {
+        const quote = ch
+        i++
+        while (i < clientSrc.length && clientSrc[i] !== quote) { if (clientSrc[i] === '\\') i++; i++ }
+        i++
+        atKeyStart = false
+        continue
+      }
+      if (depth === 1 && /[A-Za-z_$]/.test(ch) && atKeyStart) {
+        const m = /^([A-Za-z_$][\w$]*)\s*:/.exec(clientSrc.slice(i, i + 120))
+        if (m) out.add(m[1])
+        atKeyStart = false
+        i++
+        continue
+      }
+      if (depth === 1 && (ch === ',' || ch === '\n')) atKeyStart = true
+      else if (depth === 1 && !/\s/.test(ch)) atKeyStart = false
+      i++
+    }
+    return out
+  }
+  const zhKeys = dictKeys('ZH')
+  const enKeys = dictKeys('EN')
+  assert(zhKeys.size > 200, `中文内联字典键数合理（${zhKeys.size}）`)
+  assert(zhKeys.size === enKeys.size, `中英内联字典键数一致（ZH ${zhKeys.size} / EN ${enKeys.size}）`)
+  const usedKeys = [...new Set([...clientSrc.matchAll(/\bt\('(\w+)'\)/g)].map((m) => m[1]))]
+  assert(usedKeys.length > 150, `Client 使用的 i18n 键数合理（${usedKeys.length}）`)
+  const missZh = usedKeys.filter((k) => !zhKeys.has(k))
+  const missEn = usedKeys.filter((k) => !enKeys.has(k))
+  assert(missZh.length === 0, `t() 用到的键都在中文内联字典里${missZh.length ? '：' + missZh.join(', ') : ''}`)
+  assert(missEn.length === 0, `t() 用到的键都在英文内联字典里${missEn.length ? '：' + missEn.join(', ') : ''}`)
+  const onlyZh = [...zhKeys].filter((k) => !enKeys.has(k))
+  assert(onlyZh.length === 0, `没有只存在于中文的键${onlyZh.length ? '：' + onlyZh.join(', ') : ''}`)
+}
+
 const patch = fs.readFileSync(path.join(root, 'cordis.patch.yml'), 'utf8')
 assert(patch.includes('@naturalth2012/three-body-atlas'), 'cordis.patch.yml 引用自身包名')
 assert(patch.includes('id: three-body-atlas'), 'cordis.patch.yml 的 entry id 正确')
@@ -543,7 +674,7 @@ host.apply(routeCtx)
 
 const toolNames = registrations.map((r) => r.name).sort()
 const expectedTools = [
-  'three_body_ask', 'three_body_concept', 'three_body_detail', 'three_body_game',
+  'three_body_ask', 'three_body_census', 'three_body_concept', 'three_body_detail', 'three_body_game',
   'three_body_journey', 'three_body_relation', 'three_body_search', 'three_body_simulate',
   'three_body_theme', 'three_body_timeline',
 ]
@@ -893,7 +1024,7 @@ if (fs.existsSync(archPath)) {
   const nTools = (toolsBlock.match(/^\s*register\(\{/gm) || []).length
   const nGet = (webBlock.match(/^\s*register\([A-Z_]+_PATH/gm) || []).length
   const nPost = (webBlock.match(/^\s*registerAction\([A-Z_]+_PATH/gm) || []).length
-  assert(nTools === 10, `index.js 注册了 ${nTools} 个 Agent 工具`)
+  assert(nTools === 11, `index.js 注册了 ${nTools} 个 Agent 工具`)
   assert(arch.includes(`${nTools} 个 Agent 工具`), `架构文档的工具数与代码一致（${nTools}）`)
   assert(arch.includes(`${nGet} 条 GET 路由`), `架构文档的 GET 路由数与代码一致（${nGet}）`)
   assert(arch.includes(`${nPost} 条 POST 路由`), `架构文档的 POST 路由数与代码一致（${nPost}）`)

@@ -16,7 +16,7 @@ import {
   timeline, plot, gameLevels, themes, differences,
   characterJourney, pathGuide, conceptGraph,
   ask, suggestions,
-  SIM_PRESETS, simulate, sensitivity, stabilityScan, darkForest, deterrence,
+  SIM_PRESETS, simulate, sensitivity, stabilityScan, civilizationCensus, foldCensus, darkForest, deterrence,
 } from './engine.js'
 
 const BASE = '/plugins/three-body-atlas'
@@ -39,6 +39,7 @@ export const ASK_PATH = BASE + '/ask'
 export const SIM_PATH = BASE + '/simulate'
 export const SENS_PATH = BASE + '/sensitivity'
 export const SCAN_PATH = BASE + '/stability'
+export const CENSUS_PATH = BASE + '/census'
 export const FOREST_PATH = BASE + '/dark-forest'
 export const DETERRENCE_PATH = BASE + '/deterrence'
 export const JOURNEY_PATH = BASE + '/journey'
@@ -614,6 +615,63 @@ export function apply(ctx) {
     }, 'three-body-atlas: three_body_simulate tool')
 
     register({
+      name: 'three_body_census',
+      description:
+        'Census many random three-star systems and report how many generations of civilization each planet can raise. '
+        + 'Use it for "how many civilizations did the Trisolaran world go through" or "why is a stable era so rare" — '
+        + 'a single run only lasts a fraction of one orbit, so the distribution over many real integrations is the honest answer.',
+      parameters: {
+        type: 'object',
+        properties: {
+          samples: { type: 'integer', description: 'How many random systems to integrate, 8–120. Defaults to 30.' },
+        },
+        additionalProperties: false,
+      },
+      output: textOutput,
+      async execute(args) {
+        const samples = Math.max(8, Math.min(120, Math.round(Number((args && args.samples) || 30))))
+        // Walk the batches exactly as the panel does, so the tool and the GUI
+        // report the same numbers.
+        // Walk the batches like the panel does, then fold here. The Host only
+        // aggregates a sweep it integrated in one call (its batch limit is 24, so
+        // a 120-sample request cannot be one call), and the tool needs a number
+        // for any sample count. Every row below came from an integration the Host
+        // ran in this process, so folding here invents nothing.
+        const rows = []
+        let offset = 0
+        let guard = 0
+        let done = false
+        while (!done && guard < 10) {
+          const batch = civilizationCensus({ samples, offset, limit: 24, steps: 16000 })
+          rows.push(...batch.points)
+          done = batch.done
+          if (batch.next !== null) offset = batch.next
+          guard++
+        }
+        if (!rows.length) return { text: '普查没有完成，请减少样本数后重试。' }
+        const a = foldCensus(rows, samples)
+        const histogram = Object.keys(a.histogram).map(Number).sort((x, y) => x - y)
+          .map((g) => `- ${g} 代：${a.histogram[g]} 组`).join('\n')
+        const outcomes = Object.entries(a.byOutcome)
+          .map(([k, v]) => `- ${labelOfOutcome(k)}：${v.n} 组，平均 ${v.mean} 代`).join('\n')
+        return {
+          text: [
+            a.verdict,
+            '',
+            `样本 ${a.samples} 组，平均 ${a.mean} 代、中位 ${a.median} 代、最多 ${a.max} 代。`,
+            '', '代数分布：', histogram,
+            '', '按结局分组：', outcomes,
+            '',
+            `恒纪元累计时长与文明代数的相关系数 ${a.correlation}`
+              + `（越接近 1，说明文明能延续多久几乎完全取决于稳定期能撑多久）。`,            '',
+            '注意：这是随机初始条件下的分布，不是某一颗行星的真实历史。单次模拟只覆盖不到一个轨道周期，'
+              + '行星往往在几代之后就被抛出系统——那正是三体文明必须逃离的原因。',
+          ].join('\n'),
+        }
+      },
+    }, 'three-body-atlas: three_body_census tool')
+
+    register({
       name: 'three_body_theme',
       description:
         'Read the multi-angle analysis of a Three-Body theme (生存与道德, 面壁计划与欺骗, 黑暗森林, 爱与责任, 科学与傲慢, '
@@ -909,6 +967,17 @@ export function apply(ctx) {
       samples: Math.round(Number((body && body.samples) || 60)),
       seed: Number((body && body.seed) || 20230806),
     }), 'three-body-atlas: stability route')
+
+    // Batched: the client walks `offset` until `done`, and sends back the rows it
+    // already has so the final aggregate does not re-integrate the whole sweep.
+    registerAction(CENSUS_PATH, (body) => civilizationCensus({
+      samples: Math.round(Number((body && body.samples) || 60)),
+      offset: Math.round(Number((body && body.offset) || 0)),
+      limit: Math.round(Number((body && body.limit) || 12)),
+      steps: Math.round(Number((body && body.steps) || 16000)),
+      seed: Number((body && body.seed) || 20230806),
+      collected: Array.isArray(body && body.collected) ? body.collected : null,
+    }), 'three-body-atlas: census route')
 
     registerAction(FOREST_PATH, (body) => darkForest({
       civs: Number((body && body.civs) || 48),

@@ -63,6 +63,8 @@ const routes = [
   ['POST', `/simulate`, { preset: 'trisolaris' }],
   ['POST', `/sensitivity`, {}],
   ['POST', `/stability`, { samples: 8 }],
+  // Batched by design: one small batch is enough to prove the route is wired.
+  ['POST', `/census`, { samples: 8, offset: 0, limit: 4, steps: 4000 }],
   ['POST', `/dark-forest`, {}],
   ['POST', `/deterrence`, {}],
 ]

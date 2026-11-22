@@ -30,6 +30,7 @@ window.__ModuleLoader__.load({
     const SIM_PATH = BASE + '/simulate'
     const SENS_PATH = BASE + '/sensitivity'
     const SCAN_PATH = BASE + '/stability'
+    const CENSUS_PATH = BASE + '/census'
     const FOREST_PATH = BASE + '/dark-forest'
     const DETERRENCE_PATH = BASE + '/deterrence'
     const JOURNEY_PATH = BASE + '/journey'
@@ -200,6 +201,19 @@ window.__ModuleLoader__.load({
       simSubOrbit: '引力模拟',
       simSubSens: '初值敏感',
       simSubScan: '稳定性普查',
+      simSubCensus: '文明史普查',
+      censusIntro: '单次模拟只覆盖不到一个轨道周期，行星往往几代之后就被抛出系统。这里对大量随机初值各做一次真实积分，看这个行星究竟能孕育几代文明。',
+      censusRun: '开始普查',
+      censusProgress: '已采样 {done}/{total}',
+      censusMean: '平均代数',
+      censusMax: '最多代数',
+      censusBarren: '从未出现文明',
+      censusEscaped: '行星消失',
+      censusHistogram: '文明代数分布',
+      censusOutcomes: '按结局分组',
+      censusCorrelation: '恒纪元时长与代数的相关性',
+      censusGenerations: '{n} 代',
+      censusNote: '这是随机初始条件下的分布，不是某一颗行星的真实历史——但它正说明三体文明为什么必须逃离。',
       simSubForest: '黑暗森林',
       simSubDeterrence: '威慑博弈',
       sensIntro: '把一颗恒星的初速度改动百万分之一，会发生什么？',
@@ -379,6 +393,19 @@ window.__ModuleLoader__.load({
       simMetrics: 'Metrics', simEnergy: 'Energy drift', simBodies: 'Bodies left', simSteps: 'Steps',
       simSummary: 'Verdict',
       simSubOrbit: 'Gravity', simSubSens: 'Sensitivity', simSubScan: 'Stability scan',
+      simSubCensus: 'Civilization census',
+      censusIntro: 'One run covers less than a single orbit, and the planet is usually flung out after a few generations. This integrates many random systems for real and asks how many civilizations the planet can actually raise.',
+      censusRun: 'Run the census',
+      censusProgress: 'Sampled {done}/{total}',
+      censusMean: 'Mean generations',
+      censusMax: 'Most generations',
+      censusBarren: 'Never raised one',
+      censusEscaped: 'Planet gone',
+      censusHistogram: 'Generations distribution',
+      censusOutcomes: 'By outcome',
+      censusCorrelation: 'Stable span vs generations',
+      censusGenerations: '{n} gen',
+      censusNote: 'This is a distribution over random initial conditions, not the true history of one planet — and that is exactly why the Trisolarans had to leave.',
       simSubForest: 'Dark forest', simSubDeterrence: 'Deterrence',
       sensIntro: 'Nudge one star\'s velocity by one millionth. What happens?',
       sensRun: 'Measure divergence', sensVerdict: 'Verdict',
@@ -2310,6 +2337,99 @@ window.__ModuleLoader__.load({
           : null)
     }
 
+    // The panel walks the batches and hands its rows back on the final call, so
+    // the aggregate is computed once, on the Host, over every sample. Folding it
+    // here as well would duplicate the arithmetic and risk the two drifting.
+    const CensusPanel = ({ t }) => {
+      const [data, setData] = React.useState(null)
+      const [busy, setBusy] = React.useState(false)
+      const [progress, setProgress] = React.useState({ done: 0, total: 0 })
+      const [failed, setFailed] = React.useState(false)
+
+      // The route integrates real orbits, so one sample costs ~25 ms. Asking for
+      // all of them at once would block the Host for over a second, so the panel
+      // walks the batches. The server only aggregates a sweep it integrated whole,
+      // so a batched caller gets `points` and folds them here — every row still
+      // came from an integration the Host actually ran.
+      const run = async () => {
+        setBusy(true); setFailed(false); setData(null)
+        const total = 30
+        let collected = []
+        let offset = 0
+        setProgress({ done: 0, total })
+        try {
+          // Bounded loop: a route bug that never reports done must not spin the
+          // browser forever.
+          for (let guard = 0; guard < 40; guard++) {
+            const batch = await getJSON(CENSUS_PATH, {
+              samples: total, offset, limit: 12, steps: 16000, collected,
+            })
+            collected = collected.concat(batch.points || [])
+            setProgress({ done: collected.length, total: batch.total || total })
+            if (batch.done) { setData(batch); break }
+            if (batch.next === null || batch.next === undefined) break
+            offset = batch.next
+          }
+        } catch {
+          setFailed(true)
+        } finally { setBusy(false) }
+      }
+
+      const colors = {
+        stable: 'var(--dsw-alias-state-success-primary)',
+        chaotic: 'var(--dsw-alias-brand-primary)',
+        eject: 'var(--dsw-alias-state-warn-primary)',
+        collapse: 'var(--dsw-alias-state-error-primary)',
+      }
+      const outcomeLabel = (key) => ({
+        stable: t('scanStable'), chaotic: t('scanChaotic'),
+        eject: t('scanEject'), collapse: t('scanCollapse'),
+      }[key] || key)
+
+      const agg = data && data.aggregate
+      const hist = agg ? Object.keys(agg.histogram).map(Number).sort((a, b) => a - b) : []
+      const peak = agg ? Math.max(...hist.map((g) => agg.histogram[g])) : 1
+
+      return h('div', null,
+        h('p', { className: 'tba-kicker' }, t('censusIntro')),
+        h('div', { className: 'tba-controls' },
+          h('button', { className: 'tba-btn tba-primary', onClick: run, disabled: busy },
+            busy ? t('simRunning') : '🏛️ ' + t('censusRun')),
+          busy && progress.total
+            ? h('span', { className: 'tba-kicker', style: { marginLeft: 10 } },
+              t('censusProgress', { done: progress.done, total: progress.total }))
+            : null),
+        failed ? h('div', { className: 'tba-error' }, t('errorTitle')) : null,
+        agg
+          ? h(React.Fragment, null,
+            h('div', { className: 'tba-metrics' },
+              h('div', { className: 'tba-metric' }, h('b', null, String(agg.mean)), h('span', null, t('censusMean'))),
+              h('div', { className: 'tba-metric' }, h('b', null, String(agg.max)), h('span', null, t('censusMax'))),
+              h('div', { className: 'tba-metric' },
+                h('b', null, agg.barren + '/' + agg.samples), h('span', null, t('censusBarren'))),
+              h('div', { className: 'tba-metric' },
+                h('b', null, Math.round((agg.planetGone / agg.samples) * 100) + '%'), h('span', null, t('censusEscaped')))),
+            h('h3', { className: 'tba-h3sm' }, '📊 ' + t('censusHistogram')),
+            h('div', { className: 'tba-steps' },
+              ...hist.map((g) => h('div', { key: g, className: 'tba-benchrow' },
+                h('div', { className: 'tba-benchfield' }, t('censusGenerations', { n: g })),
+                h('div', { className: 'tba-bar' },
+                  h('div', {
+                    className: 'tba-barrow',
+                    style: { width: Math.max(2, (agg.histogram[g] / peak) * 100) + '%' },
+                  })),
+                h('div', { className: 'tba-benchfield' }, String(agg.histogram[g]))))),
+            h('h3', { className: 'tba-h3sm' }, '🎲 ' + t('censusOutcomes')),
+            h('div', { className: 'tba-legend' },
+              ...Object.entries(agg.byOutcome).map(([key, v]) => h('span', { key },
+                h('i', { style: { background: colors[key] || '#888' } }),
+                outcomeLabel(key) + ' · ' + v.n + ' (' + v.mean + ')'))),
+            h('div', { className: 'tba-verdict' },
+              agg.verdict + '\n\n' + t('censusCorrelation') + ' r = ' + agg.correlation
+              + '\n\n' + t('censusNote')))
+          : null)
+    }
+
     const ForestPanel = ({ t }) => {
       const [params, setParams] = React.useState({ civs: 48, suspicion: 0.55, explosion: 0.06, cost: 0.35 })
       const [data, setData] = React.useState(null)
@@ -2419,6 +2539,7 @@ window.__ModuleLoader__.load({
         ['orbit', '🪐 ' + t('simSubOrbit')],
         ['sens', '📐 ' + t('simSubSens')],
         ['scan', '🔬 ' + t('simSubScan')],
+        ['census', '🏛️ ' + t('simSubCensus')],
         ['forest', '🌌 ' + t('simSubForest')],
         ['deterrence', '🗡️ ' + t('simSubDeterrence')],
       ]
@@ -2434,6 +2555,7 @@ window.__ModuleLoader__.load({
           sub === 'orbit' ? h(OrbitPanel, { presets, t }) : null,
           sub === 'sens' ? h(SensPanel, { presets, t }) : null,
           sub === 'scan' ? h(ScanPanel, { t }) : null,
+          sub === 'census' ? h(CensusPanel, { t }) : null,
           sub === 'forest' ? h(ForestPanel, { t }) : null,
           sub === 'deterrence' ? h(DeterrencePanel, { t }) : null))
     }

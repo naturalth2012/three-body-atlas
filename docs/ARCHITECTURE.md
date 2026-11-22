@@ -13,7 +13,7 @@ L1  物理内核    sim.js      零依赖、零网络、纯函数
       ↓
 L2  领域逻辑    engine.js   → data/index.js + sim.js
       ↓
-L3  适配层      index.js    → engine.js        Host：10 个 Agent 工具 + 24 条 HTTP 路由
+L3  适配层      index.js    → engine.js        Host：11 个 Agent 工具 + 25 条 HTTP 路由
                 client.js   → 无本地依赖        Client：经 HTTP 与 Host 解耦
 ```
 
@@ -45,19 +45,17 @@ L3  适配层      index.js    → engine.js        Host：10 个 Agent 工具 +
 
 | 文件 | 非空行 | 体积 |
 |---|---:|---:|
-| `client.js` | 2957 | 167.1 KB |
+| `client.js` | 3074 | 173.7 KB |
+| `sim.js` | 1427 | 64.2 KB |
 | `data/characters.js` | 1326 | 83.9 KB |
-| `engine.js` | 1169 | 50.0 KB |
+| `engine.js` | 1169 | 50.1 KB |
 | `data/lore.js` | 1167 | 67.6 KB |
-| `sim.js` | 1136 | 51.6 KB |
-| `scripts/selfcheck.mjs` | 1014 | 62.6 KB |
+| `scripts/selfcheck.mjs` | 1136 | 69.7 KB |
+| `index.js` | 953 | 43.9 KB |
 | `data/plot.js` | 749 | 50.8 KB |
-| `index.js` | 886 | 40.3 KB |
 | `data/timeline.js` | 601 | 30.5 KB |
 | `scripts/probe.mjs` | 295 | 15.5 KB |
 | `data/spoiler.js` | 116 | 4.0 KB |
-| `data/works.js` | 106 | 4.1 KB |
-| `data/index.js` | 34 | 1.6 KB |
 
 ## 三、实测性能
 
@@ -75,8 +73,10 @@ L3  适配层      index.js    → engine.js        Host：10 个 Agent 工具 +
 | `simulate({preset:'trisolaris'})` | 22.3 ms |
 | `stabilityScan({samples:60})` | **211–285 ms** |
 | `stabilityScan({samples:240})`（路由允许的上限） | **815 ms** |
+| `civilizationCensus({limit:12, steps:16000})`（一批） | **180–210 ms** |
+| `civilizationCensus({samples:30})`（客户端 3 批合计） | **约 750 ms** |
 
-除 `stabilityScan` 外全部亚毫秒。`simulate` 一次跑 521 帧、产出 2 次灾变、2 代文明。
+除 `stabilityScan` 与单批普查外全部亚毫秒。`simulate` 一次跑 521 帧、产出 2 次灾变、2 代文明。
 
 ### 唯一的重操作：`stabilityScan`
 
@@ -85,6 +85,11 @@ L3  适配层      index.js    → engine.js        Host：10 个 Agent 工具 +
 不是 285 ms 而是约 0.8 秒——这段时间整个 GUI 事件循环被占住，并发请求会排队。
 实测：`POST /stability {"samples":240}` 期间发 `GET /bundle`，后者被阻塞 0.766 秒
 （空闲基线 0.0025 秒）。
+
+`civilizationCensus` 是第二个重操作，所以它**按批设计**：一次只积分 12 个样本
+（约 0.2 秒），客户端连续调用直到 `done`。这不是为了好看——早期版本让最后一次调用
+重算整个 sweep，末批实测 1462 ms，是普通批的 7 倍并造成明显卡顿；现在由客户端把已
+收到的行回传，末批降到 207 ms。
 
 当前只由 `/stability` 一个显式路由触发（非首屏、非自动轮询），所以日常使用无感；
 但这是**唯一的同步阻塞点**，改动此路由时需留意。
@@ -123,13 +128,13 @@ gzip 后 57 KB 对本地同源请求可忽略。
 ## 五、路由与工具的构成
 
 ```
-Agent 工具    10 个   three_body_{search,detail,relation,timeline,simulate,
+Agent 工具    11 个   three_body_{search,detail,relation,timeline,simulate,census,
                                    theme,game,ask,journey,concept}
 GET 路由      19 条   bundle/search/all/detail/place/tech/glossary/journey/guide/
                       concept/graph/neighbors/path/timeline/plot/themes/diff/game/path
-POST 路由      5 条   simulate/sensitivity/stability/darkforest/deterrence
+POST 路由      6 条   simulate/sensitivity/stability/census/darkforest/deterrence
 ──────────────────────────────────────────────────────────────
-HTTP 路由合计  24 条   与 24 个 *_PATH 常量一一对应
+HTTP 路由合计  25 条   与 25 个 *_PATH 常量一一对应
 ```
 
 ### 为什么代码里 `register` 出现了 32 次
@@ -138,9 +143,9 @@ HTTP 路由合计  24 条   与 24 个 *_PATH 常量一一对应
 
 | 作用域 | 助手 | 调用次数 | 实际注册 |
 |---|---|---:|---|
-| `ctx.inject(['tools'])` | `register(def, label)` | 10 | 10 个 Agent 工具 |
+| `ctx.inject(['tools'])` | `register(def, label)` | 11 | 11 个 Agent 工具 |
 | `ctx.inject(['webServer'])` | `register(path, …)` | 19 | 19 条 GET 路由 |
-| 同上 | `registerAction(path, …)` | 5 | 5 条 POST 路由 |
+| 同上 | `registerAction(path, …)` | 6 | 6 条 POST 路由 |
 
 `grep -c 'register('` 得到 32，其中 2 次是**助手自身的定义体**
 （`webServer.register({ kind: 'exact', … })`），不计入路由数。
@@ -166,7 +171,7 @@ HTTP 路由合计  24 条   与 24 个 *_PATH 常量一一对应
 `webServer.register` 把原始 `IncomingMessage` 直接交给 handler，**不检查 cookie、Host 或 Origin**
 （其 `readResource` 注释原文："This method checks no cookie, Host, or Origin"）。
 `dsh web` 的 401 准入检查在 SPA fallback 里，而**命名路由的匹配优先于 fallback**，
-所以本插件的 24 条路由绕过了那道准入——任何浏览器里打开的网页都能调用它们。
+所以本插件的 25 条路由绕过了那道准入——任何浏览器里打开的网页都能调用它们。
 插件市场条目曾如实披露这一点。
 
 现在的实现（`index.js` 的 `isCrossSiteRequest`）拒绝两类请求：
@@ -183,7 +188,7 @@ HTTP 路由合计  24 条   与 24 个 *_PATH 常量一一对应
 缺少 `Host` 头的请求放行（HTTP/1.1 必带 `Host`，缺失说明是本机客户端或测试替身，
 而 rebinding 请求一定带自己的域名）。
 
-覆盖范围：24 条路由全部经过校验，POST 在读取 body **之前**就拒绝。
+覆盖范围：25 条路由全部经过校验，POST 在读取 body **之前**就拒绝。
 
 复现：`node scripts/probe-bypass.mjs`（24 项对抗用例）、
 `node scripts/verify-guard.mjs <port>`（对运行中的 Host 做端到端验证）。
@@ -195,6 +200,16 @@ HTTP 路由合计  24 条   与 24 个 *_PATH 常量一一对应
 | `client.js` 2904 行单体 | 40 个组件、70 个 `useState`、14 个 `useEffect`、2 个 `useReducer` | 投递方式决定的（无构建步骤，必须单文件）。状态分散是真实技术债，但改造成本高于收益 |
 | 无缓存层 | 仅 `engine.js` 一个 `adjacency` Map | 当前 0.18/0.21 ms 完全不需要缓存，**这是正确的克制**；数据增长 5 倍后才值得加 |
 | `stabilityScan` 同步阻塞 | 211–285 ms | 唯一重操作，仅显式路由触发 |
+| `civilizationCensus` 单次积分时长受物理约束 | 默认只跑 8.32 个时间单位（<0.3 个轨道周期） | **不是缺陷**：行星在 T≈28.6 被抛出，拉长积分不会增加文明代数（实测 T=19 时峰值 4 代，之后降到 1）。要呈现原著尺度只能靠普查的分布，而不是延长单次运行 |
+
+### 普查的口径（重要）
+
+`civilizationCensus` 报告的是**随机初始条件下的分布**，不是某一颗行星的真实历史。两条必须守住的口径：
+
+1. **每样本都是真实积分**——没有脚本演出、没有伪造轨道。这一点由 `verdict` 文字明确声明，并由自检断言（`普查结论说明每样本都是真实积分`）守住。
+2. **不与 `stabilityScan` 逐样本对比**——普查用派生种子 `seed ^ imul(i, 2654435761)` 让任意 offset 可独立计算（分批的前提），因此它抽的是与 `stabilityScan` **不同**的一组初始条件。两者统计口径不同，不能横向对齐。
+
+另外，`outcome` 与 `planetEscaped` 是**两个不同问题**：前者说系统层面有没有天体飞散，后者说行星本身还在不在。行星可能被抛出、被恒星吞并，或某颗恒星被抛出而行星仍在——早期版本把两者混成一个标志，导致「eject」数量与「行星逃逸」数量对不上，现已拆开。
 
 ### 不可验证项（如实标注）
 

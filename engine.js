@@ -14,7 +14,7 @@ import {
   PLACES, PLACE_BY_ID, TECH, TECH_BY_ID, GLOSSARY, GLOSSARY_BY_ID, QUOTES,
   TIER_LABELS, MAX_TIER, GLOSSARY_TIER, MASKED_FIELDS, tierOfWork, tierOfWorks, maskRecord,
 } from './data/index.js'
-import { SIM_PRESETS, simulate, sensitivity, stabilityScan, darkForest, deterrence } from './sim.js'
+import { SIM_PRESETS, simulate, sensitivity, stabilityScan, civilizationCensus, foldCensus, darkForest, deterrence } from './sim.js'
 
 const norm = (value) => String(value == null ? '' : value).trim().toLowerCase()
 
@@ -906,7 +906,7 @@ export function bundle() {
   }
 }
 
-export { SIM_PRESETS, simulate, sensitivity, stabilityScan, darkForest, deterrence }
+export { SIM_PRESETS, simulate, sensitivity, stabilityScan, civilizationCensus, foldCensus, darkForest, deterrence }
 export { WORKS, FACTIONS, RELATION_TYPES, CHARACTERS, ERAS, EVENTS, PLACES, TECH, GLOSSARY, QUOTES, THEMES, PLOT, DIFFERENCES, PATHS, GAME_LEVELS }
 
 /* ------------------------------------------------------------------ *
