@@ -25,7 +25,9 @@
     "test": "node scripts/selfcheck.mjs",
     "probe": "node scripts/probe.mjs",
     "probe:bypass": "node scripts/probe-bypass.mjs",
-    "verify:guard": "node scripts/verify-guard.mjs"
+    "verify:guard": "node scripts/verify-guard.mjs",
+    "verify:routes": "node scripts/verify-routes.mjs",
+    "verify:pack": "node scripts/verify-pack.mjs"
   },
   "exports": {
     ".": "./index.js",
@@ -57,6 +59,8 @@
     "scripts/probe.mjs",
     "scripts/probe-bypass.mjs",
     "scripts/verify-guard.mjs",
+    "scripts/verify-routes.mjs",
+    "scripts/verify-pack.mjs",
     "docs/SCHEMA.md",
     "LICENSE",
     ".gitignore",
