@@ -1009,6 +1009,36 @@ console.log('\n## 模拟舞台 hooks 顺序')
   assert(stageRefAt > 0 && stageRefAt < earlyReturn, '舞台 hooks 全部位于提前返回之前')
 }
 
+console.log('\n## 路由跨站防护')
+// The market entry discloses that these routes answer any page the browser
+// loads: webServer admits every request, and the dsh web check sits in the SPA
+// fallback, which a named route matches before. Assert the guard exists, that it
+// rejects a positively cross-site caller, and that it still admits the panel.
+{
+  const I = await import(new URL('../index.js', import.meta.url).href)
+  assert(typeof I.isCrossSiteRequest === 'function', 'index.js 导出 isCrossSiteRequest')
+  const crossSite = [
+    ['sec-fetch-site: cross-site', { 'sec-fetch-site': 'cross-site' }],
+    ['foreign Origin', { origin: 'https://evil.example', host: '127.0.0.1:5894' }],
+    ['opaque Origin null', { origin: 'null' }],
+  ]
+  for (const [label, headers] of crossSite) {
+    assert(I.isCrossSiteRequest({ headers }) === true, `拒绝跨站请求（${label}）`)
+  }
+  const sameSite = [
+    ['same-origin fetch without Origin', {}],
+    ['same-origin POST', { origin: 'http://127.0.0.1:5894', host: '127.0.0.1:5894' }],
+    ['sec-fetch-site: same-origin', { 'sec-fetch-site': 'same-origin' }],
+    ['non-browser client', { host: '127.0.0.1:5894' }],
+  ]
+  for (const [label, headers] of sameSite) {
+    assert(I.isCrossSiteRequest({ headers }) === false, `放行同源请求（${label}）`)
+  }
+  // Guard the guard: the handlers must actually call it.
+  const indexSrc = fs.readFileSync(path.join(root, 'index.js'), 'utf8')
+  assert((indexSrc.match(/isCrossSiteRequest\(req\)/g) || []).length >= 2, '两个路由 handler 都调用了跨站校验')
+}
+
 console.log('\n' + '-'.repeat(52))
 console.log(`${checks} 项检查通过，${failures} 项失败。`)
 process.exit(failures ? 1 : 0)

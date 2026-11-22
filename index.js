@@ -83,8 +83,50 @@ function numberParam(params, key, fallback) {
   return Number.isFinite(value) ? value : fallback
 }
 
+/**
+ * Whether a browser tells us this request came from another site.
+ *
+ * `webServer` admits every request itself: `register` hands the raw
+ * `IncomingMessage` to the handler and checks no cookie, Host, or Origin — its
+ * own `readResource` documentation says so outright. The `dsh web` admission
+ * check lives in the SPA fallback, and a named route matches *before* the
+ * fallback, so a route registered here answers any page the browser loads.
+ * That is the risk the market entry discloses.
+ *
+ * This rejects only a request that positively identifies as cross-site, which
+ * keeps the panel's own same-origin calls working and leaves a non-browser
+ * client (which sends neither header) alone. It is not authentication and does
+ * not claim to be: it closes the stated hole — a web page calling these routes
+ * — without inventing a token scheme over the same unauthenticated channel.
+ */
+export function isCrossSiteRequest(req) {
+  const headers = (req && req.headers) || {}
+  const site = headers['sec-fetch-site']
+  if (typeof site === 'string' && site !== 'same-origin' && site !== 'none') return true
+  const origin = headers.origin
+  // A same-origin GET carries no Origin; an opaque one ("null") is never us.
+  if (typeof origin !== 'string' || origin === '') return false
+  if (origin === 'null') return true
+  let originHost
+  try {
+    originHost = new URL(origin).host
+  } catch {
+    return true
+  }
+  const host = headers.host
+  return typeof host === 'string' && host !== '' && originHost !== host
+}
+
+function rejectCrossSite(res) {
+  json(res, 403, { error: 'cross-site request rejected' })
+}
+
 function routeHandler(path, compute) {
   return async (req, res) => {
+    if (isCrossSiteRequest(req)) {
+      rejectCrossSite(res)
+      return
+    }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       json(res, 405, { error: 'method not allowed' })
       return
@@ -107,6 +149,12 @@ function routeHandler(path, compute) {
 /** POST endpoints read a JSON body; used by the simulation controls. */
 function actionHandler(path, compute) {
   return async (req, res) => {
+    // Checked before the body is read, so a cross-site page cannot even make us
+    // buffer its payload.
+    if (isCrossSiteRequest(req)) {
+      rejectCrossSite(res)
+      return
+    }
     try {
       if (req.method === 'GET') {
         json(res, 200, await compute(readQuery(req, path)))
