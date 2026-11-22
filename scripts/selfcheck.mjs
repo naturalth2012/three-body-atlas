@@ -1070,6 +1070,42 @@ if (fs.existsSync(entryPath) && fs.existsSync(submitPath)) {
     '投稿不含当前规范拒绝的 npm/capabilities/install 字段')
   assert(/^icon: https:\/\/raw\.githubusercontent\.com\/[^ ]+\.png\s*$/m.test(entry),
     '图标是 GitHub 托管的 PNG 链接')
+
+  // 8. The description is a claim about the code, and the market checks it
+  //    against the source. Verify every number here so a maintainer never has
+  //    to be the one who notices.
+  {
+    const descEn = (entry.match(/^  en: '(.*)'$/m) || [])[1] || ''
+    const descZh = (entry.match(/^  zh: '(.*)'$/m) || [])[1] || ''
+    const charsData = (await import('../data/characters.js')).CHARACTERS
+    const plotData = (await import('../data/plot.js'))
+    const loreData = (await import('../data/lore.js'))
+    const tlData = (await import('../data/timeline.js'))
+    const hostSrc = fs.readFileSync(path.join(root, 'index.js'), 'utf8')
+
+    const claims = [
+      ['characters', 56, charsData.length],
+      ['relations', 247, charsData.reduce((n, c) => n + ((c.relations || []).length), 0)],
+      ['plot beats', 46, (plotData.PLOT || []).reduce((n, w) => n + ((w.beats || []).length), 0)],
+      ['events', 52, (tlData.EVENTS || []).length],
+      ['eras', 10, (tlData.ERAS || []).length],
+      ['technologies', 24, loreData.TECH.length],
+      ['places', 19, loreData.PLACES.length],
+      ['glossary terms', 37, loreData.GLOSSARY.length],
+      ['reading paths', 5, (plotData.PATHS || []).length],
+      ['agent tools', 11, [...hostSrc.matchAll(/name:\s*'(three_body_\w+)'/g)].length],
+    ]
+    for (const [label, claimed, actual] of claims) {
+      assert(claimed === actual, `投稿描述称 ${claimed} ${label}，代码里是 ${actual}`)
+    }
+    // The entry must state the two facts a reader could otherwise be misled by.
+    assert(/cross-site/.test(descEn) && /跨站/.test(descZh),
+      '投稿描述写明路由拒绝跨站调用')
+    assert(!/no DSH access check|没有 DSH 的访问检查/.test(entry),
+      '投稿描述不再声称路由没有访问检查（该说法已过时）')
+    assert(/bilingual|双语/.test(descEn + descZh), '投稿描述写明双语支持')
+    assert(/archive text|图鉴正文/.test(descEn + descZh), '投稿描述写明图鉴正文为中文')
+  }
 }
 
 console.log('\n## Client 静态检查')

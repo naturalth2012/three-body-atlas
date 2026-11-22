@@ -50,7 +50,7 @@ L3  适配层      index.js    → engine.js        Host：11 个 Agent 工具 +
 | `data/characters.js` | 1326 | 83.9 KB |
 | `engine.js` | 1169 | 50.1 KB |
 | `data/lore.js` | 1167 | 67.6 KB |
-| `scripts/selfcheck.mjs` | 1316 | 79.5 KB |
+| `scripts/selfcheck.mjs` | 1350 | 81.5 KB |
 | `index.js` | 985 | 45.0 KB |
 | `data/plot.js` | 749 | 50.8 KB |
 | `data/timeline.js` | 601 | 30.5 KB |
