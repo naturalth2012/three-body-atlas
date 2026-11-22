@@ -45,12 +45,12 @@ L3  适配层      index.js    → engine.js        Host：11 个 Agent 工具 +
 
 | 文件 | 非空行 | 体积 |
 |---|---:|---:|
-| `client.js` | 3095 | 175.0 KB |
+| `client.js` | 3129 | 176.2 KB |
 | `sim.js` | 1780 | 83.7 KB |
 | `data/characters.js` | 1326 | 83.9 KB |
 | `engine.js` | 1169 | 50.1 KB |
 | `data/lore.js` | 1167 | 67.6 KB |
-| `scripts/selfcheck.mjs` | 1279 | 77.6 KB |
+| `scripts/selfcheck.mjs` | 1316 | 79.5 KB |
 | `index.js` | 985 | 45.0 KB |
 | `data/plot.js` | 749 | 50.8 KB |
 | `data/timeline.js` | 601 | 30.5 KB |
@@ -191,6 +191,21 @@ HTTP 路由合计  25 条   与 25 个 *_PATH 常量一一对应
    不抛错），再传给各函数。
 3. **物理与语言无关。** 同一组初值下 `lang:'zh'` 与 `lang:'en'` 的
    `metrics`、`frames`、`eras` 逐位相同，已由自检断言。
+
+### 语言从哪里来
+
+面板**没有自己的语言开关**，它跟随 DSH 的界面语言：设置 → 通用 → 语言。
+读取方式是 `locale.getSnapshot().active`（也兼容 `getLocale()` 与裸
+`{ active }` 对象）。
+
+这里有个坑值得记下来：`locale` 服务**没有** `language()` / `current()` /
+`getLanguage()` 这三个方法。早期版本按这三个方法探测，全部落空后回退到
+`navigator.language`——于是在中文浏览器上，即便把 DSH 切成英文，面板依然显示
+中文。自检现在会实测 `active='zh'|'en'|'ja'` 三种取值下的判定结果，防止这种
+「探测了不存在的方法、静默落到浏览器」的写法再次出现。
+
+判定只认精确的 `en*`。服务自身的兜底语言是英文，但那是**词典兜底**而不是
+语言偏好——把它当作偏好会让日语用户看到英文面板。
 
 ## 七、已知边界与风险
 

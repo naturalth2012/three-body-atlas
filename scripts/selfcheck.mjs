@@ -1334,6 +1334,45 @@ console.log('\n## 双语政策')
   const host = fs.readFileSync(path.join(root, 'index.js'), 'utf8')
   assert(/function langOf\(body\)/.test(host), '路由层有 langOf 归一化')
   assert(/body\.lang === 'en' \? 'en' : 'zh'/.test(host), 'langOf 只认 en，其余回退 zh')
+
+  // 7b. The panel must follow DSH's own language setting, not the browser's.
+  //
+  //     The locale service exposes `{ active, locales, revision }` through
+  //     getSnapshot()/getLocale(). It has no language()/current()/getLanguage();
+  //     probing for those used to fall straight through to navigator.language,
+  //     so switching DSH to English left this panel Chinese.
+  assert(/getSnapshot\(\)/.test(client) && /\.active/.test(client),
+    'isEnglish 通过 getSnapshot().active 读取 DSH 的当前语言')
+  assert(!/locale\.language\s*\(|locale\.current\s*\(|locale\.getLanguage\s*\(/.test(client),
+    '不再探测 locale 上并不存在的 language()/current()/getLanguage()')
+  {
+    const grabArrow = (name) => {
+      const start = client.indexOf(`const ${name} = (locale) => {`)
+      if (start < 0) return ''
+      let depth = 0
+      for (let i = client.indexOf('{', start); i < client.length; i++) {
+        if (client[i] === '{') depth++
+        else if (client[i] === '}') { depth--; if (depth === 0) return client.slice(start, i + 1) }
+      }
+      return ''
+    }
+    const fnSource = grabArrow('activeLocaleId') + '\n' + grabArrow('isEnglish')
+    if (!fnSource.trim()) {
+      fail('client.js 里找不到 activeLocaleId/isEnglish，无法验证语言判定')
+    } else {
+      const { isEnglish: probe } = new Function(`${fnSource}\nreturn { isEnglish }`)()
+      const service = (active) => ({
+        getSnapshot: () => ({ active, locales: [], revision: 1 }),
+        getLocale: () => ({ active, locales: [], revision: 1 }),
+      })
+      for (const [active, want] of [['zh', false], ['en', true], ['en-US', true], ['ja', false]]) {
+        assert(probe(service(active)) === want, `DSH 语言 ${active} 时判定为英文界面 = ${want}`)
+      }
+      assert(probe({ active: 'en' }) === true, '裸 snapshot 也能识别语言')
+      assert(probe(null) !== undefined, 'locale 缺失时不抛错')
+    }
+  }
+
   // Match the registerAction calls, not the `const *_PATH = ...` declarations.
   for (const route of ['SIM_PATH', 'SENS_PATH', 'SCAN_PATH', 'CENSUS_PATH', 'FOREST_PATH', 'DETERRENCE_PATH']) {
     const call = host.indexOf(`registerAction(${route},`)

@@ -507,13 +507,48 @@ window.__ModuleLoader__.load({
       conceptKinds: 'terms / tech / people / places',
     }
 
+    /* Which language is DSH itself showing?
+     *
+     * The locale service exposes its state as a snapshot, `{ active, locales,
+     * revision }` — reachable through `getSnapshot()` (the LocaleFace) or
+     * `getLocale()`. It has no `language()` / `current()` / `getLanguage()`.
+     * Probing for those and falling through to `navigator.language` silently
+     * ignored the user's DSH setting: switching DSH to English left this panel
+     * Chinese on a Chinese-locale browser.
+     *
+     * Only an exact `en*` id counts as English. The service's own fallback is
+     * English, but that is a dictionary fallback, not a language preference —
+     * treating it as one would flip this panel to English for a Japanese user.
+     */
+    const activeLocaleId = (locale) => {
+      const read = (source) => {
+        if (!source) return undefined
+        if (typeof source.getSnapshot === 'function') {
+          const snap = source.getSnapshot()
+          if (snap && typeof snap.active === 'string') return snap.active
+        }
+        if (typeof source.getLocale === 'function') {
+          const snap = source.getLocale()
+          if (snap && typeof snap.active === 'string') return snap.active
+        }
+        return undefined
+      }
+      try {
+        const direct = read(locale)
+        if (direct !== undefined) return direct
+        // Older or partial hosts may hand over the bare snapshot instead.
+        if (locale && typeof locale.active === 'string') return locale.active
+      } catch { /* fall through to the browser */ }
+      try {
+        return typeof navigator !== 'undefined' ? navigator.language : 'zh'
+      } catch {
+        return 'zh'
+      }
+    }
+
     const isEnglish = (locale) => {
       try {
-        if (locale && typeof locale.language === 'function') return String(locale.language()).toLowerCase().startsWith('en')
-        if (locale && typeof locale.current === 'function') return String(locale.current()).toLowerCase().startsWith('en')
-        if (locale && typeof locale.getLanguage === 'function') return String(locale.getLanguage()).toLowerCase().startsWith('en')
-        const nav = typeof navigator !== 'undefined' ? navigator.language : 'zh'
-        return String(nav).toLowerCase().startsWith('en')
+        return String(activeLocaleId(locale)).toLowerCase().startsWith('en')
       } catch {
         return false
       }
