@@ -43,13 +43,13 @@ const check = (label, ok, detail) => {
 try {
   console.log(`  临时目录 ${tmp}`)
 
-  const packed = run('npm', ['pack', '--pack-destination', tmp], root)
+  const packed = runNpm(['pack', '--pack-destination', tmp], root)
   check('npm pack 成功', packed.code === 0)
   const tarball = fs.readdirSync(tmp).find((name) => name.endsWith('.tgz'))
   check('产出 tarball', Boolean(tarball), tarball || '')
 
   if (tarball) {
-    const installed = run('npm', ['install', '--silent', '--no-save', tarball], tmp)
+    const installed = runNpm(['install', '--silent', '--no-save', tarball], tmp)
     check('npm install 成功', installed.code === 0)
 
     const pkgDir = path.join(tmp, 'node_modules', '@naturalth2012', 'three-body-atlas')
