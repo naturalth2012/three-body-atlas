@@ -152,6 +152,33 @@ HTTP 路由合计  24 条   与 24 个 *_PATH 常量一一对应
 
 ## 七、已知边界与风险
 
+### 路由的跨站防护
+
+`webServer.register` 把原始 `IncomingMessage` 直接交给 handler，**不检查 cookie、Host 或 Origin**
+（其 `readResource` 注释原文："This method checks no cookie, Host, or Origin"）。
+`dsh web` 的 401 准入检查在 SPA fallback 里，而**命名路由的匹配优先于 fallback**，
+所以本插件的 24 条路由绕过了那道准入——任何浏览器里打开的网页都能调用它们。
+插件市场条目曾如实披露这一点。
+
+现在的实现（`index.js` 的 `isCrossSiteRequest`）拒绝两类请求：
+
+1. **明确标识为跨站的**：`sec-fetch-site` 为 `cross-site`/`same-site`、`Origin` 是异源或 `null`；
+2. **`Host` 是普通域名的**——这一条才是关键。只比较 `Origin` 与 `Host` 是不够的：
+   DNS rebinding 让攻击者页面以 `evil.example` 访问到 127.0.0.1 时，两个头**都**是
+   `evil.example`，同源比较会放行。而 `webServer` 只接受 IP 字面量且拒绝通配绑定，
+   所以合法请求的 `Host` 必然是回环名或 IP 字面量。
+
+**这不是认证，代码里也没这么声称。** 它放行面板自身的同源调用，也不干扰不发这些头的
+非浏览器客户端。判定只接受标准 IP 字面量：`0x7f000001`、`2130706433`、`0177.0.0.1`
+这类非标准写法虽指向本机，仍会被拒——**宁可误拒，不放行无法确认来源的请求**。
+缺少 `Host` 头的请求放行（HTTP/1.1 必带 `Host`，缺失说明是本机客户端或测试替身，
+而 rebinding 请求一定带自己的域名）。
+
+覆盖范围：24 条路由全部经过校验，POST 在读取 body **之前**就拒绝。
+
+复现：`node scripts/probe-bypass.mjs`（24 项对抗用例）、
+`node scripts/verify-guard.mjs <port>`（对运行中的 Host 做端到端验证）。
+
 ### 架构层面
 
 | 项 | 现状 | 判断 |
@@ -181,8 +208,9 @@ HTTP 路由合计  24 条   与 24 个 *_PATH 常量一一对应
 cd three-body-atlas
 
 # 数据完整性与渲染（可直接跑）
-node scripts/selfcheck.mjs   # 565 项断言，含引用完整性与分级单调性
-node scripts/probe.mjs       # 106 次渲染，0 错误
+node scripts/selfcheck.mjs   # 598 项断言，含引用完整性、分级单调性与跨站防护
+node scripts/probe.mjs       # 108 次渲染，0 错误
+node scripts/probe-bypass.mjs # 24 项跨站对抗用例
 ```
 
 **性能数字的测法**：目标函数预热 3 次，再取 20 次 `performance.now()` 均值。

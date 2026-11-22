@@ -8,7 +8,7 @@
 
 | 项目 | 状态 |
 |---|---|
-| 代码与数据 | ✅ 完成，`node scripts/selfcheck.mjs` 565 项通过 |
+| 代码与数据 | ✅ 完成，`node scripts/selfcheck.mjs` 598 项通过 |
 | 包规范 | ✅ 包名、license、author、keywords、engines、repository、publishConfig 就位 |
 | `private` 字段 | ✅ 无（否则 npm 会拒绝发布） |
 | LICENSE | ✅ MIT + 著作权与来源说明 |
@@ -54,7 +54,7 @@ npm publish --registry=https://registry.npmjs.org
 - 发布前可再自查一次：
 
   ```bash
-  node scripts/selfcheck.mjs    # 565 项
+  node scripts/selfcheck.mjs    # 598 项
   npm pack --dry-run            # 确认只含预期的 29 个文件
   ```
 
