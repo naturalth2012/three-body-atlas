@@ -660,7 +660,7 @@ window.__ModuleLoader__.load({
         .tba-era-seg.tba-stable{background:linear-gradient(180deg,#8fd6a6,#4fa86d)}
         .tba-era-seg.tba-chaotic{background:linear-gradient(180deg,#e8a06a,#c2543a);color:#2a1208}
         .tba-era-note{font-size:11.5px;color:var(--dsw-alias-label-secondary)}
-        .tba-stage{position:relative;background:radial-gradient(ellipse at 50% 45%,#101826 0%,#080b12 62%,#05070b 100%);border:1px solid var(--dsw-alias-border-l1);border-radius:12px;overflow:hidden;height:430px}
+        .tba-stage{position:relative;background:#05070b;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;overflow:hidden;height:clamp(400px,42vw,620px)}
         .tba-stage-cta{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#a9b8cb;text-align:center;padding:0 24px}
         .tba-stage-cta .tba-btn{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.24);color:#e6eef8}
         .tba-stage-cta .tba-btn:hover:not(:disabled){border-color:#8fc7f0;color:#bfe2ff}
@@ -1671,13 +1671,35 @@ window.__ModuleLoader__.load({
       }
 
       // ---- Camera -------------------------------------------------------
-      // The old renderer mapped a fixed 20-unit box onto the canvas. A real
-      // system spans 2–7 units, so everything collapsed into a few dozen
-      // pixels and the "trajectory" was invisible. Fit the camera to the data
-      // instead, per preset and per frame, keeping the aspect ratio square so
-      // the orbits are not distorted.
-      const W = 1000
-      const H = 600
+      // The stage is far wider than it is tall, but the viewBox used to be a
+      // fixed 1000×600. With preserveAspectRatio="meet" that letterboxed the
+      // drawing into the middle 37% of the stage, and because the SVG painted
+      // its own gradient only inside the letterbox, the leftover strips showed
+      // the stage's *different* CSS gradient — two dark bands down either side.
+      // Measure the real box and build the viewBox to match it, so the scene
+      // covers the stage exactly and the fit uses the height it really has.
+      const stageRef = React.useRef(null)
+      const [box, setBox] = React.useState({ w: 1000, h: 600 })
+      React.useEffect(() => {
+        const el = stageRef.current
+        if (!el || typeof ResizeObserver === 'undefined') return undefined
+        const measure = () => {
+          const r = el.getBoundingClientRect()
+          if (!(r.width > 0) || !(r.height > 0)) return
+          // Fix the *height* at 600 and derive the width from the true aspect.
+          // Deriving the height instead would need a lower clamp, and on a very
+          // wide stage that clamp would re-introduce the letterbox this change
+          // exists to remove.
+          const w = Math.round(Math.max(600, Math.min(3600, (r.width / r.height) * 600)))
+          setBox((prev) => (prev.w === w ? prev : { w, h: 600 }))
+        }
+        measure()
+        const ro = new ResizeObserver(measure)
+        ro.observe(el)
+        return () => ro.disconnect()
+      }, [])
+      const W = box.w
+      const H = box.h
       const liveFrames = result.frames
       // Frame the *bound* system. A body that has been ejected is drawn clamped
       // at the edge, so including it in the fit would zoom the real orbits away.
@@ -1708,9 +1730,14 @@ window.__ModuleLoader__.load({
       if (!Number.isFinite(minX)) { minX = -1; maxX = 1; minY = -1; maxY = 1 }
       const centreX = (minX + maxX) / 2
       const centreY = (minY + maxY) / 2
-      const halfSpan = Math.max(0.35, Math.max(maxX - minX, maxY - minY) / 2)
-      // 0.92 leaves room for the body discs without wasting a sixth of the view.
-      const fitScale = Math.min(W, H) / (2 * halfSpan) * 0.92
+      // Bounding-box fit: scale by whichever axis is binding, so the system
+      // uses as much of the stage as it can without cropping a body or
+      // distorting the orbits. Using a single min(W,H) term assumed a square
+      // box and left most of a wide stage empty.
+      const spanX = Math.max(0.7, maxX - minX)
+      const spanY = Math.max(0.7, maxY - minY)
+      const halfSpan = Math.max(spanX, spanY) / 2
+      const fitScale = Math.min((W * 0.94) / spanX, (H * 0.94) / spanY)
       const toSvgX = (x) => W / 2 + (x - centreX) * fitScale
       const toSvgY = (y) => H / 2 - (y - centreY) * fitScale
 
@@ -1735,11 +1762,26 @@ window.__ModuleLoader__.load({
         }
       }
 
+      // Frames deliberately carry only {id, kind, x, y, dead} — repeating the
+      // static metadata in all 521 of them was most of the payload. The draw
+      // radius and colour live once in result.bodies, so join them back by id
+      // here. Reading them off the frame body instead yielded undefined, which
+      // made discRadius NaN; SVG treats r="NaN" as invalid and skips the whole
+      // <circle>, so every star and the planet silently vanished.
+      const metaById = new Map((result.bodies || []).map((b) => [b.id, b]))
+      const FALLBACK_COLOR = '#9fb4cc'
       const bodyEls = current.bodies.filter((b) => !b.dead).map((b) => {
+        const meta = metaById.get(b.id) || {}
+        const color = meta.color || FALLBACK_COLOR
         const trail = trails[b.id] || []
-        const discRadius = b.kind === 'planet'
-          ? Math.max(3, b.radius * 0.55)
-          : Math.max(5, Math.min(16, b.radius * 0.9))
+        // A draw radius in viewBox units would shrink as the camera zooms out,
+        // so scale the marker with the fitted span: stars stay legible in a
+        // wide system and do not balloon in a tight one.
+        const baseRadius = Number.isFinite(meta.radius) ? meta.radius : 4
+        const zoom = Math.min(1.9, Math.max(0.55, 3.1 / Math.max(0.35, halfSpan)))
+        const discRadius = (b.kind === 'planet'
+          ? Math.max(2.6, baseRadius * 0.55)
+          : Math.max(4.5, Math.min(15, baseRadius * 0.9))) * zoom
         const cx = toSvgX(b.x)
         const cy = toSvgY(b.y)
         // Clamp the marker to the frame so a body outside the 98% fit stays
@@ -1751,17 +1793,18 @@ window.__ModuleLoader__.load({
           trail.length > 1
             ? h('polyline', {
               points: trail.map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' '),
-              fill: 'none', stroke: b.color, strokeOpacity: 0.42,
-              strokeWidth: b.kind === 'planet' ? 1.6 : 1.15, strokeLinejoin: 'round',
+              fill: 'none', stroke: color, strokeOpacity: 0.55,
+              strokeWidth: b.kind === 'planet' ? 1.8 : 1.5, strokeLinejoin: 'round',
+              strokeLinecap: 'round',
             })
             : null,
           // The head of the trail, so the current position is unmistakable.
-          h('circle', { cx: clampedX, cy: clampedY, r: discRadius * 2.4, fill: b.color, opacity: 0.1 }),
+          h('circle', { cx: clampedX, cy: clampedY, r: discRadius * 2.6, fill: color, opacity: 0.13 }),
           h('circle', {
             cx: clampedX, cy: clampedY, r: discRadius,
-            fill: b.color,
+            fill: color,
             opacity: offscreen ? 0.55 : 1,
-            stroke: offscreen ? b.color : 'rgba(0,0,0,.35)',
+            stroke: offscreen ? color : 'rgba(0,0,0,.35)',
             strokeWidth: offscreen ? 1.6 : 0.8,
             strokeDasharray: offscreen ? '2 2' : undefined,
           }))
@@ -1772,28 +1815,29 @@ window.__ModuleLoader__.load({
         : 0
 
       return h(React.Fragment, null,
-        h('div', { className: 'tba-stage' },
-          h('svg', { viewBox: '0 0 1000 600', preserveAspectRatio: 'xMidYMid meet' },
+        h('div', { className: 'tba-stage', ref: stageRef },
+          h('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet' },
             h('defs', null,
               h('radialGradient', { id: 'tba-bg', cx: '50%', cy: '45%', r: '70%' },
                 h('stop', { offset: '0', stopColor: '#16233a' }),
                 h('stop', { offset: '0.55', stopColor: '#0b1018' }),
                 h('stop', { offset: '1', stopColor: '#05070b' }))),
-            h('rect', { x: 0, y: 0, width: 1000, height: 600, fill: 'url(#tba-bg)' }),
-            ...Array.from({ length: 40 }, (_, i) => h('circle', {
+            h('rect', { x: 0, y: 0, width: W, height: H, fill: 'url(#tba-bg)' }),
+            ...Array.from({ length: 90 }, (_, i) => h('circle', {
               key: 'star' + i,
-              cx: (i * 137.5) % 1000,
-              cy: (i * 89.3) % 600,
+              cx: (i * 137.5) % W,
+              cy: (i * 89.3) % H,
               r: (i % 4) * 0.35 + 0.5,
               fill: '#c9d6e6',
               opacity: 0.16 + (i % 5) * 0.06,
             })),
-            // Two faint reference circles make the scale legible.
+            // Faint reference circles make the scale legible. Radius follows
+            // the fitted system, not the box, so they read as distance rings.
             ...Array.from({ length: 3 }, (_, i) => h('circle', {
               key: 'ring' + i,
               cx: W / 2, cy: H / 2,
-              r: Math.min(W, H) / 2 * (0.32 + i * 0.3),
-              fill: 'none', stroke: '#5d7c9c', strokeOpacity: 0.1, strokeWidth: 0.8,
+              r: halfSpan * fitScale * (0.36 + i * 0.32),
+              fill: 'none', stroke: '#5d7c9c', strokeOpacity: 0.12, strokeWidth: 0.8,
             })),
             ...bodyEls),
           h('div', { className: 'tba-stage-meta' },
@@ -1802,9 +1846,12 @@ window.__ModuleLoader__.load({
             h('div', { style: { opacity: 0.62 } },
               t('simScale', { span: (halfSpan * 2).toFixed(1) }))),
           h('div', { className: 'tba-stage-legend' },
-            ...current.bodies.filter((b) => !b.dead).map((b) => h('div', { key: b.id },
-              h('span', { style: { color: b.color } }, '●'),
-              ' ' + ((result.bodies.find((x) => x.id === b.id) || {}).name || b.id)))),
+            ...current.bodies.filter((b) => !b.dead).map((b) => {
+              const meta = metaById.get(b.id) || {}
+              return h('div', { key: b.id },
+                h('span', { style: { color: meta.color || FALLBACK_COLOR } }, '●'),
+                ' ' + (meta.name || b.id))
+            })),
           result.metrics.ejected.length
             ? h('div', { className: 'tba-stage-meta', style: { left: 'auto', right: 12, top: 'auto', bottom: 10 } },
               t('simEjected', { n: result.metrics.ejected.length }))

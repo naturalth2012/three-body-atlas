@@ -147,6 +147,55 @@ render(React.createElement(T.ScanPanel, { t }), 'ScanPanel')
 render(React.createElement(T.ForestPanel, { t }), 'ForestPanel')
 render(React.createElement(T.DeterrencePanel, { t }), 'DeterrencePanel')
 render(React.createElement(T.OrbitStage, { result: SIM, preset: DATA.simPresets[0], t }), 'OrbitStage')
+
+/* The stage used to read radius/colour off each frame body, but frames carry
+ * only {id, kind, x, y, dead} — the static metadata is sent once in
+ * result.bodies. That made discRadius NaN and fill undefined; React happily
+ * built the element tree and reported no error, while the browser skipped
+ * every r="NaN" circle and the stage showed nothing but its background. So
+ * walk the produced SVG and assert the geometry is actually drawable. */
+{
+  const stageTree = T.OrbitStage({ result: SIM, preset: DATA.simPresets[0], t })
+  const found = { circles: [], polylines: [], fills: new Set(), strokes: new Set() }
+  const walk = (node) => {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) { node.forEach(walk); return }
+    const props = node.props || {}
+    if (node.type === 'circle') {
+      found.circles.push(props)
+      if (props.fill) found.fills.add(String(props.fill))
+    }
+    if (node.type === 'polyline') {
+      found.polylines.push(props)
+      if (props.stroke) found.strokes.add(String(props.stroke))
+    }
+    walk(node.children)
+    walk(node.props && node.props.children)
+  }
+  walk(stageTree)
+
+  // Bodies are the circles with a numeric cx/cy and a real radius. Decorative
+  // background dots have r <= 2, so anything >= 2.5 is a drawn body.
+  const bodies = found.circles.filter((c) => Number.isFinite(c.r) && c.r >= 2.5)
+  if (bodies.length < 3) errors.push(`OrbitStage drew only ${bodies.length} bodies (expected >= 3)`)
+  for (const c of found.circles) {
+    if (!Number.isFinite(c.r)) errors.push('OrbitStage produced a circle with non-finite r: ' + c.r)
+    if (String(c.fill) === 'undefined' || String(c.fill) === 'NaN') {
+      errors.push('OrbitStage produced a circle with invalid fill: ' + c.fill)
+    }
+  }
+  for (const p of found.polylines) {
+    if (!p.stroke || String(p.stroke) === 'undefined') errors.push('OrbitStage trail has no stroke colour')
+    if (!Number.isFinite(p.strokeWidth)) errors.push('OrbitStage trail has non-finite strokeWidth')
+    if (!/^[\d.,\s-]+$/.test(String(p.points || ''))) errors.push('OrbitStage trail points are malformed')
+    if (String(p.points).includes('NaN')) errors.push('OrbitStage trail contains NaN coordinates')
+  }
+  // The stars' own colours must reach the SVG, not a fallback for everything.
+  const starColours = new Set(SIM.bodies.filter((b) => b.kind === 'star').map((b) => b.color))
+  for (const colour of starColours) {
+    if (!found.fills.has(colour)) errors.push('star colour missing from the stage: ' + colour)
+  }
+}
 render(React.createElement(T.EraStrip, { eras: SIM.eras, t }), 'EraStrip')
 render(React.createElement(T.PathFinder, { t }), 'PathFinder')
 

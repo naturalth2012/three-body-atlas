@@ -6,6 +6,7 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -958,6 +959,32 @@ if (styleBlock) {
     .filter((line) => !artwork.test(line))
   assert(offenders.length === 0,
     '样式表只在图形部分使用固定颜色' + (offenders.length ? '：' + offenders[0].trim().slice(0, 80) : ''))
+}
+
+console.log('\n## 模拟舞台渲染')
+// The stage regression that shipped: frames carry only {id,kind,x,y,dead}, so
+// reading radius/colour off a frame body produced r="NaN" and
+// fill="undefined". React raised nothing, the browser silently dropped every
+// circle, and the stage showed an empty sky. probe.mjs walks the produced SVG
+// and asserts the geometry is drawable; run it here so the gate is one command.
+{
+  const probe = spawnSync(process.execPath, [path.join(root, 'scripts', 'probe.mjs')], {
+    encoding: 'utf8',
+    timeout: 120000,
+  })
+  const probeOut = (probe.stdout || '') + (probe.stderr || '')
+  const errLine = (probeOut.match(/^errors: (\d+)$/m) || [])[1]
+  assert(probe.status === 0, 'probe.mjs 正常退出' + (probe.status === 0 ? '' : '：' + probeOut.slice(-300)))
+  assert(errLine !== undefined, 'probe.mjs 输出了错误计数')
+  const stageErrs = probeOut.split('\n').filter((l) => l.trim().startsWith('OrbitStage')).slice(0, 2).join(' / ')
+  assert(errLine === '0', `probe.mjs 渲染 0 错误（实际 ${errLine}）` + (errLine && errLine !== '0' ? '：' + stageErrs : ''))
+  assert(/function components rendered: \d+/.test(probeOut), 'probe.mjs 渲染了组件')
+  // Guard the guard: the assertions above only mean something if probe.mjs
+  // still contains the SVG geometry checks they depend on.
+  const probeSrc = fs.readFileSync(path.join(root, 'scripts', 'probe.mjs'), 'utf8')
+  assert(probeSrc.includes('non-finite r'), 'probe.mjs 仍校验天体半径有限')
+  assert(probeSrc.includes('invalid fill'), 'probe.mjs 仍校验天体填色有效')
+  assert(probeSrc.includes('star colour missing'), 'probe.mjs 仍校验恒星配色到达 SVG')
 }
 
 console.log('\n' + '-'.repeat(52))
