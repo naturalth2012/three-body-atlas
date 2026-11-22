@@ -987,6 +987,28 @@ console.log('\n## 模拟舞台渲染')
   assert(probeSrc.includes('star colour missing'), 'probe.mjs 仍校验恒星配色到达 SVG')
 }
 
+console.log('\n## 模拟舞台 hooks 顺序')
+// The second blank-screen regression: the camera hooks were added after the
+// stage's early return, so the empty state called 7 hooks and the loaded state
+// 10. React threw "Rendered more hooks than during the previous render" and the
+// whole page went white the first time a simulation finished. The probe now
+// counts hooks per component across renders; assert it covers both states and
+// that the check is live.
+{
+  const probeSrc = fs.readFileSync(path.join(root, 'scripts', 'probe.mjs'), 'utf8')
+  assert(probeSrc.includes('hooks order changed between renders'), 'probe.mjs 校验 hook 顺序稳定')
+  assert(probeSrc.includes("'OrbitStageEmpty'"), 'probe.mjs 渲染了舞台空态')
+  // Both states must be exercised, or the tally has nothing to compare against.
+  assert(/result: null/.test(probeSrc), 'probe.mjs 用空 result 渲染空态')
+  const clientSrc = fs.readFileSync(path.join(root, 'client.js'), 'utf8')
+  // The camera hooks must sit above the early return inside OrbitStage.
+  const stageAt = clientSrc.indexOf('const OrbitStage = (')
+  const earlyReturn = clientSrc.indexOf("if (!result || !result.frames || !result.frames.length)", stageAt)
+  const stageRefAt = clientSrc.indexOf('const stageRef = React.useRef(null)', stageAt)
+  assert(stageAt > 0 && earlyReturn > stageAt, 'client.js 中舞台有提前返回分支')
+  assert(stageRefAt > 0 && stageRefAt < earlyReturn, '舞台 hooks 全部位于提前返回之前')
+}
+
 console.log('\n' + '-'.repeat(52))
 console.log(`${checks} 项检查通过，${failures} 项失败。`)
 process.exit(failures ? 1 : 0)

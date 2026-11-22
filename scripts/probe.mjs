@@ -20,6 +20,22 @@ const DATA = engine.bundle()
 const SIM = sim.simulate(sim.SIM_PRESETS[0])
 
 /* --- A tiny React stand-in ------------------------------------------------ */
+// Hook bookkeeping. React throws "Rendered more hooks than during the previous
+// render" when a component takes an early return on some renders but not
+// others, and the real page goes blank. A shim whose hooks are silent no-ops
+// cannot see that, which is exactly how a hooks-order bug once shipped: the
+// probe reported zero errors while the browser showed a white screen. So count
+// hooks per component and compare across renders.
+let hookDepth = null
+const hookCounts = new Map()
+const hookCountsById = new Map()
+const hookStack = []
+
+function noteHook(comp) {
+  if (!comp) return
+  comp.n = (comp.n || 0) + 1
+}
+
 const React = {
   createElement(type, props, ...children) {
     if (type === undefined || type === null) throw new Error('createElement received ' + type)
@@ -27,11 +43,12 @@ const React = {
     return { type, props: props || {}, children: kids }
   },
   Fragment: 'Fragment',
-  useState(init) { return [typeof init === 'function' ? init() : init, () => {}] },
-  useEffect() {},
-  useMemo(fn) { return fn() },
-  useReducer(state) { return [state, () => {}] },
-  useRef(value) { return { current: value } },
+  useState(init) { noteHook(hookDepth); return [typeof init === 'function' ? init() : init, () => {}] },
+  useEffect(fn) { noteHook(hookDepth) },
+  useMemo(fn) { noteHook(hookDepth); return fn() },
+  useReducer(state) { noteHook(hookDepth); return [state, () => {}] },
+  useRef(value) { noteHook(hookDepth); return { current: value } },
+  useCallback(fn) { noteHook(hookDepth); return fn },
 }
 
 const requireFn = (name) => {
@@ -111,13 +128,34 @@ function render(node, trail) {
   if (Array.isArray(node)) { node.forEach((n, i) => render(n, trail + '[' + i + ']')); return }
   if (typeof node.type === 'function') {
     const name = node.type.name || 'Anonymous'
+    const comp = node.type
     let out
+    // Reset the per-render hook tally, run the component, then compare with the
+    // tally from its previous render.
+    hookDepth = comp
+    comp.n = 0
     try {
-      out = node.type(node.props)
+      out = comp(node.props)
     } catch (error) {
       errors.push(trail + ' > ' + name + ' :: ' + error.message)
+      hookDepth = null
       return
     }
+    hookDepth = null
+    const prev = hookCounts.get(name)
+    if (prev !== undefined && prev !== comp.n) {
+      errors.push(trail + ' > ' + name + ' :: hooks order changed between renders (' +
+        prev + ' → ' + comp.n + ') — an early return must not precede a hook')
+    }
+    // Index by the component's own identity, not the trail label, so the same
+    // component rendered under two different labels still shares one tally.
+    const prevById = hookCountsById.get(comp)
+    if (prevById !== undefined && prevById !== comp.n) {
+      errors.push(name + ' :: hooks order changed between renders (' +
+        prevById + ' → ' + comp.n + ') — an early return must not precede a hook')
+    }
+    hookCountsById.set(comp, comp.n)
+    hookCounts.set(name, comp.n)
     rendered++
     seen.add(name)
     if (trail.length > 6000) return
@@ -147,6 +185,15 @@ render(React.createElement(T.ScanPanel, { t }), 'ScanPanel')
 render(React.createElement(T.ForestPanel, { t }), 'ForestPanel')
 render(React.createElement(T.DeterrencePanel, { t }), 'DeterrencePanel')
 render(React.createElement(T.OrbitStage, { result: SIM, preset: DATA.simPresets[0], t }), 'OrbitStage')
+
+/* The stage takes an early return when there is no result yet — that is the
+ * state the reader sees before pressing run. Rendering only the loaded state
+ * hid a hooks-order bug: the empty branch returned before three hooks that the
+ * loaded branch went on to call, so React saw a different hook count on the
+ * first real run and blanked the whole page. Render both states so the hook
+ * tally above has something to compare. */
+render(React.createElement(T.OrbitStage, { result: null, preset: DATA.simPresets[0], t, busy: false }), 'OrbitStageEmpty')
+render(React.createElement(T.OrbitStage, { result: { frames: [] }, preset: DATA.simPresets[0], t, busy: true }), 'OrbitStageEmptyBusy')
 
 /* The stage used to read radius/colour off each frame body, but frames carry
  * only {id, kind, x, y, dead} — the static metadata is sent once in

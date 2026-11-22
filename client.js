@@ -1657,27 +1657,12 @@ window.__ModuleLoader__.load({
         if (onTime && current) onTime(current.t)
       }, [current && current.t])
 
-      if (!result || !result.frames || !result.frames.length) {
-        // The empty stage is the natural place for the primary action: before
-        // the first run, the only useful thing to do is start one.
-        return h('div', { className: 'tba-stage tba-stage-empty' },
-          h('div', { className: 'tba-stage-cta' },
-            h('div', { style: { fontSize: 30, marginBottom: 8 } }, busy ? '⏳' : '🪐'),
-            h('div', { style: { fontSize: 13.5, marginBottom: 12 } },
-              busy ? t('simRunning') : t('simIdle')),
-            h('button', {
-              className: 'tba-btn tba-primary', onClick: onRun, disabled: busy || !preset,
-            }, busy ? t('simRunning') : '▶ ' + t('simRun'))))
-      }
-
-      // ---- Camera -------------------------------------------------------
-      // The stage is far wider than it is tall, but the viewBox used to be a
-      // fixed 1000×600. With preserveAspectRatio="meet" that letterboxed the
-      // drawing into the middle 37% of the stage, and because the SVG painted
-      // its own gradient only inside the letterbox, the leftover strips showed
-      // the stage's *different* CSS gradient — two dark bands down either side.
-      // Measure the real box and build the viewBox to match it, so the scene
-      // covers the stage exactly and the fit uses the height it really has.
+      // ---- Camera measurement -------------------------------------------
+      // Hooks must run unconditionally, in the same order on every render. The
+      // empty branch below returns early, so these three have to be declared
+      // before it — placing them after it changed the hook count between the
+      // idle and playing states and blanked the whole page with "Rendered more
+      // hooks than during the previous render".
       const stageRef = React.useRef(null)
       const [box, setBox] = React.useState({ w: 1000, h: 600 })
       React.useEffect(() => {
@@ -1698,6 +1683,28 @@ window.__ModuleLoader__.load({
         ro.observe(el)
         return () => ro.disconnect()
       }, [])
+
+      if (!result || !result.frames || !result.frames.length) {
+        // The empty stage is the natural place for the primary action: before
+        // the first run, the only useful thing to do is start one.
+        return h('div', { className: 'tba-stage tba-stage-empty', ref: stageRef },
+          h('div', { className: 'tba-stage-cta' },
+            h('div', { style: { fontSize: 30, marginBottom: 8 } }, busy ? '⏳' : '🪐'),
+            h('div', { style: { fontSize: 13.5, marginBottom: 12 } },
+              busy ? t('simRunning') : t('simIdle')),
+            h('button', {
+              className: 'tba-btn tba-primary', onClick: onRun, disabled: busy || !preset,
+            }, busy ? t('simRunning') : '▶ ' + t('simRun'))))
+      }
+
+      // ---- Camera -------------------------------------------------------
+      // The stage is far wider than it is tall, but the viewBox used to be a
+      // fixed 1000×600. With preserveAspectRatio="meet" that letterboxed the
+      // drawing into the middle 37% of the stage, and because the SVG painted
+      // its own gradient only inside the letterbox, the leftover strips showed
+      // the stage's *different* CSS gradient — two dark bands down either side.
+      // Measure the real box and build the viewBox to match it, so the scene
+      // covers the stage exactly and the fit uses the height it really has.
       const W = box.w
       const H = box.h
       const liveFrames = result.frames
