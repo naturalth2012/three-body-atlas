@@ -412,7 +412,8 @@ assert(tri.civilizations.generations > 0, `三体世界推演出 ${tri.civilizat
 // The reading must not call a planet-cooking system "stable": orbital
 // boundedness and habitability are different claims.
 const triChaosAngle = tri.reading.find((a) => a.id === 'chaos')
-assert(triChaosAngle.verdict !== '稳定' || tri.catastrophes.filter((c) => c.severity === '致命').length === 0,
+assert(triChaosAngle.verdictKey !== 'stable'
+  || tri.catastrophes.filter((c) => c.severity === 'lethal' || c.severity === 'devastating').length === 0,
   `三体世界的「稳定还是混沌」结论不自相矛盾（${triChaosAngle.verdict}）`)
 assert(!/稳定/.test(triChaosAngle.text) || /不温和|致命|灾变/.test(triChaosAngle.text),
   '轨道稳定但致命天象频发时，解读不会宣称它温和')
@@ -1223,6 +1224,157 @@ console.log('\n## 路由跨站防护')
   // Guard the guard: the handlers must actually call it.
   const indexSrc = fs.readFileSync(path.join(root, 'index.js'), 'utf8')
   assert((indexSrc.match(/isCrossSiteRequest\(req\)/g) || []).length >= 2, '两个路由 handler 都调用了跨站校验')
+}
+
+console.log('\n## 双语政策')
+// The A-tier decision (docs/I18N-DECISION.md) is only safe if the boundary it
+// draws is enforced. These assertions are that enforcement: they fail the build
+// the moment a translated label leaks into a decision, or English output starts
+// carrying Chinese prose again.
+{
+  const CJK = /[\u4e00-\u9fa5]/
+  const preset = S.SIM_PRESETS.find((p) => p.id === 'trisolaris')
+
+  // 1. Stable ids, not prose, must drive the client's decisions.
+  assert(!/data-severity='(毁灭|致命|极端|灼热)'/.test(client),
+    'CSS 不按中文 severity 文案匹配（已改为稳定 id）')
+  assert(/data-severity='lethal'/.test(client) && /data-severity='devastating'/.test(client),
+    'CSS 按稳定 severity id 上色')
+  assert(/angle\.tone === 'good'/.test(client),
+    '解读徽章按 tone 判定，不按 verdict 文案')
+  assert(!/verdict === '可信'|verdict === '稳定'/.test(client),
+    '客户端不再匹配中文 verdict 文案')
+
+  // 2. Every severity the engine emits must have a colour rule and a label.
+  const severities = new Set()
+  const kinds = new Set()
+  for (const p of S.SIM_PRESETS) {
+    const run = S.simulate({ bodies: p.bodies, params: p.params })
+    for (const c of run.catastrophes) { severities.add(c.severity); kinds.add(c.kind) }
+  }
+  assert(severities.size > 0, `实际触发到的 severity 有 ${severities.size} 种`)
+  for (const s of severities) {
+    assert(client.includes(`data-severity='${s}'`), `severity "${s}" 在 CSS 里有对应规则`)
+  }
+  for (const k of kinds) {
+    assert(/^[a-z][a-z-]*$/.test(k), `灾变 kind "${k}" 是稳定 id 而不是中文标签`)
+  }
+
+  // 3. English output must contain no Chinese at all.
+  const collectStrings = (value, out = []) => {
+    if (typeof value === 'string') out.push(value)
+    else if (Array.isArray(value)) value.forEach((v) => collectStrings(v, out))
+    else if (value && typeof value === 'object') Object.values(value).forEach((v) => collectStrings(v, out))
+    return out
+  }
+  for (const p of S.SIM_PRESETS) {
+    const en = S.simulate({ bodies: p.bodies, params: p.params, lang: 'en' })
+    const cjk = collectStrings(en).filter((s) => CJK.test(s))
+    assert(cjk.length === 0, `simulate(${p.id}) 的英文输出无中文残留（实测 ${cjk.length} 处）`)
+  }
+  const enRuns = [
+    ['sensitivity', S.sensitivity({ lang: 'en' })],
+    ['stabilityScan', S.stabilityScan({ samples: 8, lang: 'en' })],
+    ['civilizationCensus', S.civilizationCensus({ samples: 8, limit: 8, steps: 4000, lang: 'en' })],
+    ['darkForest', S.darkForest({ civs: 12, lang: 'en' })],
+    ['deterrence', S.deterrence({ lang: 'en' })],
+  ]
+  for (const [name, run] of enRuns) {
+    const cjk = collectStrings(run).filter((s) => CJK.test(s))
+    assert(cjk.length === 0, `${name} 的英文输出无中文残留（实测 ${cjk.length} 处）`)
+  }
+
+  // 4. Physics must not depend on the report language.
+  const zhRun = S.simulate({ bodies: preset.bodies, params: preset.params, lang: 'zh' })
+  const enRun = S.simulate({ bodies: preset.bodies, params: preset.params, lang: 'en' })
+  assert(JSON.stringify(zhRun.metrics) === JSON.stringify(enRun.metrics), '中英文 metrics 逐位相同')
+  assert(JSON.stringify(zhRun.frames) === JSON.stringify(enRun.frames), '中英文 frames 逐位相同')
+  assert(JSON.stringify(zhRun.eras.map((e) => [e.kind, e.start, e.end]))
+    === JSON.stringify(enRun.eras.map((e) => [e.kind, e.start, e.end])), '中英文 eras 逐位相同')
+  assert(zhRun.summary !== enRun.summary, 'summary 确实随语言改变（不是两份相同的中文）')
+
+  // 5. An unknown language must fall back to Chinese, never fail.
+  const fallback = S.simulate({ bodies: preset.bodies, params: preset.params, lang: 'en-US-x' })
+  assert(fallback.summary === zhRun.summary, '非法 lang 回退到中文默认')
+
+  // 6. The UI word lists must stay in step.
+  //    Slice each object to its own closing brace: `const EN = {` is followed by
+  //    ordinary code once the object ends, and counting those keys as missing
+  //    translations would be a false alarm.
+  const blockAfter = (source, header) => {
+    const start = source.indexOf(header)
+    if (start < 0) return ''
+    const open = source.indexOf('{', start)
+    let depth = 0
+    for (let i = open; i < source.length; i++) {
+      if (source[i] === '{') depth++
+      else if (source[i] === '}') {
+        depth--
+        if (depth === 0) return source.slice(start, i + 1)
+      }
+    }
+    return source.slice(start)
+  }
+  const zhBlock = blockAfter(client, 'const ZH = {')
+  const enBlock = blockAfter(client, 'const EN = {')
+  const keysOf = (block) => new Set(
+    // Keys may share a line (`nav: '…', title: '…',`), so match every
+    // `identifier:` at a line start or after a comma — not just the first.
+    [...block.matchAll(/(?:^|[,{]\s*|\n\s*)([A-Za-z][\w]*):/gm)].map((m) => m[1]),
+  )
+  const zhKeys = keysOf(zhBlock)
+  const enKeys = keysOf(enBlock)
+  const missingEn = [...zhKeys].filter((k) => !enKeys.has(k))
+  const missingZh = [...enKeys].filter((k) => !zhKeys.has(k))
+  assert(missingEn.length === 0, `EN 词表覆盖全部 ZH 键（缺 ${missingEn.length}${missingEn.length ? '：' + missingEn.slice(0, 5).join(',') : ''}）`)
+  assert(missingZh.length === 0, `ZH 词表覆盖全部 EN 键（缺 ${missingZh.length}${missingZh.length ? '：' + missingZh.slice(0, 5).join(',') : ''}）`)
+  assert(zhKeys.size > 200, `ZH 词表有 ${zhKeys.size} 个键`)
+
+  // 7. Route layer must forward the language, and normalise it.
+  const host = fs.readFileSync(path.join(root, 'index.js'), 'utf8')
+  assert(/function langOf\(body\)/.test(host), '路由层有 langOf 归一化')
+  assert(/body\.lang === 'en' \? 'en' : 'zh'/.test(host), 'langOf 只认 en，其余回退 zh')
+  // Match the registerAction calls, not the `const *_PATH = ...` declarations.
+  for (const route of ['SIM_PATH', 'SENS_PATH', 'SCAN_PATH', 'CENSUS_PATH', 'FOREST_PATH', 'DETERRENCE_PATH']) {
+    const call = host.indexOf(`registerAction(${route},`)
+    assert(call > 0, `index.js 注册了 ${route}`)
+    // Walk to the matching close paren of the registerAction call.
+    let depth = 0
+    let end = call
+    for (let i = host.indexOf('(', call); i < host.length; i++) {
+      if (host[i] === '(') depth++
+      else if (host[i] === ')') {
+        depth--
+        if (depth === 0) { end = i; break }
+      }
+    }
+    const body = host.slice(call, end + 1)
+    assert(/langOf\(body\)/.test(body), `${route} 把 lang 传给引擎`)
+  }
+
+  // 8. Terminology spot checks — the novel's English edition fixes these, so a
+  //    regression here means the UI invented its own translation.
+  assert(enRun.eras.every((e) => e.label === 'Stable Era' || e.label === 'Chaotic Era'),
+    'eras.label 在英文模式下就是英文')
+  assert(zhRun.eras.every((e) => e.label === '恒纪元' || e.label === '乱纪元'),
+    'eras.label 在中文模式下仍是中文')
+  assert(enRun.catastrophes.every((c) => c.kindLabel && !CJK.test(c.kindLabel)),
+    '灾变 kindLabel 在英文模式下无中文')
+  assert(enRun.catastrophes.every((c) => c.severityLabel && !CJK.test(c.severityLabel)),
+    '灾变 severityLabel 在英文模式下无中文')
+  // Every stable id in the two label tables must carry both languages.
+  const simSource = fs.readFileSync(path.join(root, 'sim.js'), 'utf8')
+  for (const table of ['SEVERITY_LABELS', 'CATASTROPHE_LABELS']) {
+    const start = simSource.indexOf(`const ${table} = {`)
+    assert(start > 0, `sim.js 定义了 ${table}`)
+    const block = simSource.slice(start, simSource.indexOf('\n}', start))
+    const entries = [...block.matchAll(/'?([\w-]+)'?:\s*\{\s*zh:\s*'([^']*)',\s*en:\s*'([^']*)'\s*\}/g)]
+    assert(entries.length >= 5, `${table} 有 ${entries.length} 条双语条目`)
+    for (const [, key, zh, en] of entries) {
+      assert(zh.length > 0 && en.length > 0, `${table}.${key} 中英文都不为空`)
+      assert(!CJK.test(en), `${table}.${key} 的英文标签不含中文`)
+    }
+  }
 }
 
 console.log('\n## 文档数字与实测一致')

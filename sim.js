@@ -19,6 +19,151 @@
  * Seeded randomness
  * ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ *
+ * Display labels for stable identifiers
+ *
+ * Every severity / catastrophe kind / reading verdict is a *stable id* in the
+ * data and a *label* on screen. Keeping them apart is what lets the filters in
+ * `readingOf` and the `[data-severity]` CSS rules keep working after the label
+ * is translated — matching on prose would break silently.
+ * ------------------------------------------------------------------ */
+
+const SEVERITY_LABELS = {
+  // catastrophe severities
+  lethal: { zh: '致命', en: 'Lethal' },
+  scorching: { zh: '灼热', en: 'Scorching' },
+  extreme: { zh: '极端', en: 'Extreme' },
+  devastating: { zh: '毁灭', en: 'Devastating' },
+  // reading verdicts
+  credible: { zh: '可信', en: 'Credible' },
+  acceptable: { zh: '可接受', en: 'Acceptable' },
+  cautious: { zh: '需要谨慎', en: 'Treat with care' },
+  'stable-with-catastrophes': { zh: '轨道稳定但有灾变', en: 'Stable but catastrophic' },
+  stable: { zh: '稳定', en: 'Stable' },
+  ejected: { zh: '飞散', en: 'Ejected' },
+  merged: { zh: '并合', en: 'Merged' },
+  grazing: { zh: '近距离交会', en: 'Close encounter' },
+  chaotic: { zh: '混沌', en: 'Chaotic' },
+  'no-planet': { zh: '无行星', en: 'No planet' },
+  // Distinct from `ejected` on purpose: the chaos angle reports the system
+  // ("飞散"), the planet angle reports the planet itself ("已飞散").
+  'planet-ejected': { zh: '已飞散', en: 'Ejected' },
+  'barely-habitable': { zh: '勉强宜居', en: 'Barely habitable' },
+  uninhabitable: { zh: '不宜居', en: 'Uninhabitable' },
+  'rebuilt-repeatedly': { zh: '文明反复重建', en: 'Civilization rebuilt' },
+  'civilization-exiled': { zh: '文明被放逐', en: 'Civilization exiled' },
+  'single-generation': { zh: '单代文明', en: 'Single generation' },
+  'no-civilization': { zh: '没有文明', en: 'No civilization' },
+}
+
+const CATASTROPHE_LABELS = {
+  'tri-solar-day': { zh: '三日凌空', en: 'Tri-Solar Day' },
+  'tri-solar-appearance': { zh: '三日同现', en: 'Three Suns Up' },
+  syzygy: { zh: '三日连珠', en: 'Syzygy' },
+  'planet-devoured': { zh: '行星被吞噬', en: 'Planet Devoured' },
+  'tidal-disruption': { zh: '潮汐撕裂', en: 'Tidal Disruption' },
+}
+
+/** Resolve a stable severity/verdict id to a display label. */
+export function severityLabel(key, lang) {
+  const entry = SEVERITY_LABELS[key]
+  if (!entry) return String(key ?? '')
+  return lang === 'en' ? entry.en : entry.zh
+}
+
+/** Resolve a stable catastrophe-kind id to a display label. */
+export function catastropheLabel(key, lang) {
+  const entry = CATASTROPHE_LABELS[key]
+  if (!entry) return String(key ?? '')
+  return lang === 'en' ? entry.en : entry.zh
+}
+
+/** The catastrophe prose for a given event, in the requested language. */
+export function catastropheText(event, lang) {
+  if (!event) return ''
+  const en = lang === 'en'
+  const key = event.textKey
+  const map = {
+    'tri-solar-day': {
+      zh: '三颗恒星同时高悬，且都离得很近：地表温度失控，岩石熔化，文明被烤成焦土。',
+      en: 'All three suns hang overhead at once and all of them are close: the surface temperature runs away, '
+        + 'rock melts, and civilization is burned to slag.',
+    },
+    'tri-solar-appearance': {
+      zh: '三颗恒星同时升上天空。日照翻了几倍，但还不是灭顶之灾——地表的文明必须躲进地下。',
+      en: 'All three suns rise at once. Insolation multiplies several-fold, but it is not yet the end — '
+        + 'a surface civilization has to go underground.',
+    },
+    'tri-solar-day-persisting': {
+      zh: '行星同时被三颗恒星近距离照射，一直持续到推演结束。',
+      en: 'The planet is irradiated by all three suns at close range, and it lasts until the run ends.',
+    },
+    'tri-solar-appearance-persisting': {
+      zh: '三颗恒星同时挂在天上，一直持续到推演结束。',
+      en: 'All three suns stay in the sky until the run ends.',
+    },
+    syzygy: {
+      zh: '三颗恒星排成一线、行星正好在这条线上：引力叠加撕扯地壳，日照同时推到致命的量级。',
+      en: 'The three suns line up and the planet sits on that line: the superimposed gravity tears at the '
+        + 'crust while insolation is driven to a lethal level.',
+    },
+    'planet-devoured': {
+      zh: '行星坠入恒星，整个文明在几分钟内汽化。',
+      en: 'The planet falls into a star, and the whole civilization is vaporized within minutes.',
+    },
+    'tidal-disruption': {
+      zh: '恒星的潮汐力超过行星自身的引力束缚：地壳被撕开，岩浆喷向太空。',
+      en: 'A star\'s tidal force exceeds the planet\'s own gravitational binding: the crust is torn open '
+        + 'and magma sprays into space.',
+    },
+    'tri-solar-day-detail': {
+      zh: '最近的一颗恒星距行星 ',
+      en: 'The nearest star is ',
+    },
+    'tri-solar-day-detail-suffix': {
+      zh: ' 个距离单位。',
+      en: ' distance units from the planet.',
+    },
+    'syzygy-detail': {
+      zh: '三颗恒星的连线偏差 ',
+      en: 'The alignment deviation of the three suns is ',
+    },
+    'syzygy-detail-mid': {
+      zh: '，行星偏离这条线 ',
+      en: ', and the planet is ',
+    },
+    'syzygy-detail-suffix': {
+      zh: '。',
+      en: ' off that line.',
+    },
+    'tidal-detail-mid': {
+      zh: ' 掠过时距离仅 ',
+      en: ' passed at a distance of only ',
+    },
+    'tidal-detail-mid2': {
+      zh: '，罗希极限为 ',
+      en: ', with a Roche limit of ',
+    },
+    'persisting-detail': {
+      zh: '这场凌空没有结束——对地表文明来说，这意味着结局。',
+      en: 'This Tri-Solar Day never ended — for a surface civilization, that means the end.',
+    },
+  }
+  const pick = (k) => (map[k] ? (en ? map[k].en : map[k].zh) : '')
+  if (key) {
+    // Composite keys carry their own numeric detail, built by the caller.
+    return pick(key)
+  }
+  return en ? '' : (event.text || '')
+}
+
+/** The civilization headline, in the requested language. */
+export function civilizationsText(civ, lang) {
+  if (!civ) return ''
+  if (lang === 'en' && civ.headlineEn) return civ.headlineEn
+  return civ.headline || ''
+}
+
 export function rng(seed) {
   let s = (Number(seed) || 1) >>> 0
   if (s === 0) s = 0x9e3779b9
@@ -39,65 +184,79 @@ const SUN_COLORS = ['#f2c14e', '#eb8f3c', '#e0563b']
 /**
  * Presets differ only in initial conditions, which is the whole point of the
  * three-body problem: tiny changes produce entirely different stories.
+ *
+ * `nameEn` / `descEn` exist because body names end up inside the narrative
+ * ("X was ejected from the system"), so leaving them Chinese would put CJK back
+ * into an otherwise English report.
  */
 export const SIM_PRESETS = [
   {
     id: 'trisolaris',
     name: '三体世界',
+    nameEn: 'Trisolaris',
     desc: '一颗行星绕着三颗恒星运行——原著里那个被三日凌空反复焚毁的世界。',
+    descEn: 'One planet orbiting three suns — the world the novel burns over and over with Tri-Solar Days.',
     params: { dt: 0.0016, steps: 5200, record: 10, escape: 14 },
     bodies: [
-      { id: 'sun-a', name: '恒星 A', kind: 'star', mass: 1.0, radius: 7, color: SUN_COLORS[0], x: -3.2, y: 0.0, vx: 0.0, vy: 0.34 },
-      { id: 'sun-b', name: '恒星 B', kind: 'star', mass: 1.0, radius: 7, color: SUN_COLORS[1], x: 3.0, y: 0.4, vx: -0.05, vy: -0.29 },
-      { id: 'sun-c', name: '恒星 C', kind: 'star', mass: 1.0, radius: 7, color: SUN_COLORS[2], x: 0.4, y: 3.4, vx: 0.22, vy: -0.04 },
-      { id: 'planet', name: '三体行星', kind: 'planet', mass: 1e-5, radius: 3.2, color: '#6fc3d9', x: 1.4, y: 0.2, vx: -0.12, vy: 0.9 },
+      { id: 'sun-a', name: '恒星 A', nameEn: 'Star A', kind: 'star', mass: 1.0, radius: 7, color: SUN_COLORS[0], x: -3.2, y: 0.0, vx: 0.0, vy: 0.34 },
+      { id: 'sun-b', name: '恒星 B', nameEn: 'Star B', kind: 'star', mass: 1.0, radius: 7, color: SUN_COLORS[1], x: 3.0, y: 0.4, vx: -0.05, vy: -0.29 },
+      { id: 'sun-c', name: '恒星 C', nameEn: 'Star C', kind: 'star', mass: 1.0, radius: 7, color: SUN_COLORS[2], x: 0.4, y: 3.4, vx: 0.22, vy: -0.04 },
+      { id: 'planet', name: '三体行星', nameEn: 'Trisolaran planet', kind: 'planet', mass: 1e-5, radius: 3.2, color: '#6fc3d9', x: 1.4, y: 0.2, vx: -0.12, vy: 0.9 },
     ],
   },
   {
     id: 'figure-eight',
     name: '八字舞',
+    nameEn: 'Figure-Eight',
     desc: '三颗等质量恒星在八字轨道上周期运动——三体问题里罕见的稳定解。',
+    descEn: 'Three equal stars moving periodically on a figure-eight orbit — the rare stable solution of the three-body problem.',
     params: { dt: 0.0009, steps: 7000, record: 10, escape: 14, collisions: false },
     bodies: [
-      { id: 'sun-a', name: '恒星 A', kind: 'star', mass: 1.0, radius: 7, color: SUN_COLORS[0], x: -0.97000436, y: 0.24308753, vx: 0.466203685, vy: 0.43236573 },
-      { id: 'sun-b', name: '恒星 B', kind: 'star', mass: 1.0, radius: 7, color: SUN_COLORS[1], x: 0.97000436, y: -0.24308753, vx: 0.466203685, vy: 0.43236573 },
-      { id: 'sun-c', name: '恒星 C', kind: 'star', mass: 1.0, radius: 7, color: SUN_COLORS[2], x: 0, y: 0, vx: -0.93240737, vy: -0.86473146 },
+      { id: 'sun-a', name: '恒星 A', nameEn: 'Star A', kind: 'star', mass: 1.0, radius: 7, color: SUN_COLORS[0], x: -0.97000436, y: 0.24308753, vx: 0.466203685, vy: 0.43236573 },
+      { id: 'sun-b', name: '恒星 B', nameEn: 'Star B', kind: 'star', mass: 1.0, radius: 7, color: SUN_COLORS[1], x: 0.97000436, y: -0.24308753, vx: 0.466203685, vy: 0.43236573 },
+      { id: 'sun-c', name: '恒星 C', nameEn: 'Star C', kind: 'star', mass: 1.0, radius: 7, color: SUN_COLORS[2], x: 0, y: 0, vx: -0.93240737, vy: -0.86473146 },
     ],
   },
   {
     id: 'pythagorean',
     name: '毕达哥拉斯三体',
+    nameEn: 'Pythagorean Three-Body',
     desc: '质量 3∶4∶5、从静止出发的经典构型（Burrau 问题）——三体问题最著名的「不可预测」样本。',
+    descEn: 'The classic 3:4:5 mass configuration starting from rest (Burrau\'s problem) — the most famous "unpredictable" sample of the three-body problem.',
     // Burrau is a point-mass classic: the stars are infinitely compact,
     // so they pass through each other instead of merging.
     params: { dt: 0.0012, steps: 6000, record: 8, escape: 16, collisions: false },
     bodies: [
-      { id: 'sun-a', name: '质量 3', kind: 'star', mass: 3, radius: 6.2, color: SUN_COLORS[0], x: 1, y: 3, vx: 0, vy: 0 },
-      { id: 'sun-b', name: '质量 4', kind: 'star', mass: 4, radius: 6.8, color: SUN_COLORS[1], x: -2, y: -1, vx: 0, vy: 0 },
-      { id: 'sun-c', name: '质量 5', kind: 'star', mass: 5, radius: 7.4, color: SUN_COLORS[2], x: 1, y: -1, vx: 0, vy: 0 },
+      { id: 'sun-a', name: '质量 3', nameEn: 'Mass 3', kind: 'star', mass: 3, radius: 6.2, color: SUN_COLORS[0], x: 1, y: 3, vx: 0, vy: 0 },
+      { id: 'sun-b', name: '质量 4', nameEn: 'Mass 4', kind: 'star', mass: 4, radius: 6.8, color: SUN_COLORS[1], x: -2, y: -1, vx: 0, vy: 0 },
+      { id: 'sun-c', name: '质量 5', nameEn: 'Mass 5', kind: 'star', mass: 5, radius: 7.4, color: SUN_COLORS[2], x: 1, y: -1, vx: 0, vy: 0 },
     ],
   },
   {
     id: 'binary-planet',
     name: '双星与行星',
+    nameEn: 'Binary and Planet',
     desc: '两颗恒星互绕、外围一行星——比三体温和得多的世界，用来对照「恒纪元」有多难得。',
+    descEn: 'Two stars orbiting each other with one planet outside — a far gentler world, there to show how rare a Stable Era is.',
     params: { dt: 0.0016, steps: 5200, record: 10, escape: 16 },
     bodies: [
-      { id: 'sun-a', name: '恒星 A', kind: 'star', mass: 1.0, radius: 7, color: SUN_COLORS[0], x: -1.1, y: 0, vx: 0, vy: 0.46 },
-      { id: 'sun-b', name: '恒星 B', kind: 'star', mass: 0.85, radius: 6.4, color: SUN_COLORS[1], x: 1.1, y: 0, vx: 0, vy: -0.46 },
-      { id: 'planet', name: '行星', kind: 'planet', mass: 1e-5, radius: 3.2, color: '#6fc3d9', x: 0, y: 5.2, vx: -0.36, vy: 0 },
+      { id: 'sun-a', name: '恒星 A', nameEn: 'Star A', kind: 'star', mass: 1.0, radius: 7, color: SUN_COLORS[0], x: -1.1, y: 0, vx: 0, vy: 0.46 },
+      { id: 'sun-b', name: '恒星 B', nameEn: 'Star B', kind: 'star', mass: 0.85, radius: 6.4, color: SUN_COLORS[1], x: 1.1, y: 0, vx: 0, vy: -0.46 },
+      { id: 'planet', name: '行星', nameEn: 'Planet', kind: 'planet', mass: 1e-5, radius: 3.2, color: '#6fc3d9', x: 0, y: 5.2, vx: -0.36, vy: 0 },
     ],
   },
   {
     id: 'planet-ejected',
     name: '被甩出的行星',
+    nameEn: 'Ejected Planet',
     desc: '三颗恒星的引力弹弓把行星抛进深空——三体世界最可能的结局之一：整个文明被冻进真空。',
+    descEn: 'The slingshot of three suns flings the planet into deep space — one of the likeliest fates of the Trisolaran world: a whole civilization frozen into vacuum.',
     params: { dt: 0.0016, steps: 6000, record: 12, escape: 12 },
     bodies: [
-      { id: 'sun-a', name: '恒星 A', kind: 'star', mass: 1.52, radius: 7.2, color: SUN_COLORS[0], x: 2.01, y: -0.05, vx: 0.025, vy: 1.011 },
-      { id: 'sun-b', name: '恒星 B', kind: 'star', mass: 1.78, radius: 7.6, color: SUN_COLORS[1], x: 0.44, y: 2.02, vx: -1.711, vy: 0.373 },
-      { id: 'sun-c', name: '恒星 C', kind: 'star', mass: 1.22, radius: 6.8, color: SUN_COLORS[2], x: 0.7, y: -0.96, vx: 1.045, vy: 0.754 },
-      { id: 'planet', name: '行星', kind: 'planet', mass: 1e-5, radius: 3.2, color: '#6fc3d9', x: -2.86, y: 0.08, vx: -0.045, vy: -1.609 },
+      { id: 'sun-a', name: '恒星 A', nameEn: 'Star A', kind: 'star', mass: 1.52, radius: 7.2, color: SUN_COLORS[0], x: 2.01, y: -0.05, vx: 0.025, vy: 1.011 },
+      { id: 'sun-b', name: '恒星 B', nameEn: 'Star B', kind: 'star', mass: 1.78, radius: 7.6, color: SUN_COLORS[1], x: 0.44, y: 2.02, vx: -1.711, vy: 0.373 },
+      { id: 'sun-c', name: '恒星 C', nameEn: 'Star C', kind: 'star', mass: 1.22, radius: 6.8, color: SUN_COLORS[2], x: 0.7, y: -0.96, vx: 1.045, vy: 0.754 },
+      { id: 'planet', name: '行星', nameEn: 'Planet', kind: 'planet', mass: 1e-5, radius: 3.2, color: '#6fc3d9', x: -2.86, y: 0.08, vx: -0.045, vy: -1.609 },
     ],
   },
 ]
@@ -262,10 +421,16 @@ function mergeBodies(bodies, i, j, time) {
 
 /**
  * Integrate a system and derive the story the reader cares about.
- * @param {{bodies: object[], params?: object}} config
+ *
+ * `lang` only selects which of the two already-computed narratives to return;
+ * the physics never depends on it, so a Chinese and an English run of the same
+ * configuration agree digit for digit.
+ *
+ * @param {{bodies: object[], params?: object, lang?: 'zh'|'en'}} config
  */
 export function simulate(config) {
   const source = config && Array.isArray(config.bodies) ? config : clone(SIM_PRESETS[0])
+  const lang = (config && config.lang === 'en') ? 'en' : 'zh'
   const params = Object.assign({ dt: 0.0016, steps: 5200, record: 10, escape: 14, collisions: true }, source.params || {})
   const dt = Math.max(1e-5, Math.min(0.02, Number(params.dt) || 0.0016))
   const steps = Math.max(200, Math.min(40000, Math.round(Number(params.steps) || 5200)))
@@ -286,7 +451,11 @@ export function simulate(config) {
       : Math.max(1e-4, 0.0047 * Math.cbrt(mass))
     return {
       id: b.id || 'b' + i,
-      name: b.name || '天体 ' + (i + 1),
+      // Body names are interpolated into the narrative, so in English mode they
+      // must be English too or the report ends up half translated.
+      name: lang === 'en'
+        ? (b.nameEn || b.name || 'Body ' + (i + 1))
+        : (b.name || '天体 ' + (i + 1)),
       kind: b.kind === 'planet' ? 'planet' : 'star',
       mass,
       radius: Math.max(1, Number(b.radius) || 6),
@@ -300,7 +469,7 @@ export function simulate(config) {
     }
   })
   if (bodies.length < 2) {
-    return { ok: false, error: '至少需要两个天体。' }
+    return { ok: false, error: lang === 'en' ? 'At least two bodies are required.' : '至少需要两个天体。' }
   }
 
   const planetIndex = bodies.findIndex((b) => b.kind === 'planet')
@@ -364,7 +533,12 @@ export function simulate(config) {
             const lost = mergeBodies(bodies, i, j, time)
             const after = invariants(bodies).energy
             radiated += Math.max(0, before - after)
-            events.push({ t: Number(time.toFixed(3)), type: 'collision', text: lost.lost + ' 被 ' + lost.into + ' 吞并' })
+            events.push({
+              t: Number(time.toFixed(3)),
+              type: 'collision',
+              text: lost.lost + ' 被 ' + lost.into + ' 吞并',
+              textEn: lost.lost + ' was swallowed by ' + lost.into,
+            })
             bodies.splice(lost.index, 1)
             swallowed = lost.index
             break
@@ -382,6 +556,7 @@ export function simulate(config) {
         events.push({
           t: Number(time.toFixed(3)), type: 'eject',
           text: b.name + ' 被抛出系统（距原点 ' + r.toFixed(1) + '）',
+          textEn: b.name + ' was ejected from the system (distance from origin ' + r.toFixed(1) + ')',
         })
       }
     }
@@ -457,13 +632,31 @@ export function simulate(config) {
     stable: drift < 0.02 && ejected.size === 0,
   }
 
-  const eras = eraSegments(track)
+  const eras = eraSegments(track, lang)
   const planetBody = bodies.find((b) => b.kind === 'planet')
-  const catastrophes = detectCatastrophes(frames, bodies, eras)
-  const civilizations = civilizationHistory(eras, catastrophes, { hasPlanet: Boolean(planetBody) })
+  const rawCatastrophes = detectCatastrophes(frames, bodies, eras)
+  const rawCivilizations = civilizationHistory(eras, rawCatastrophes, { hasPlanet: Boolean(planetBody) })
+  const en = lang === 'en'
+
+  // `kind` and `severity` stay as stable ids so filters and CSS keep matching;
+  // the display text lives in the sibling `*Label` fields, chosen here once
+  // rather than at each of the client's twenty-odd render sites.
+  const catastrophes = rawCatastrophes.map((c) => Object.assign({}, c, {
+    kindLabel: catastropheLabel(c.kind, lang),
+    severityLabel: severityLabel(c.severity, lang),
+    text: en ? (c.textEn || c.text) : c.text,
+    detail: en ? (c.detailEn || c.detail) : c.detail,
+  }))
+  const civilizations = Object.assign({}, rawCivilizations, {
+    headline: en ? (rawCivilizations.headlineEn || rawCivilizations.headline) : rawCivilizations.headline,
+  })
+  const localizedEvents = events.map((e) => Object.assign({}, e, {
+    text: en ? (e.textEn || e.text) : e.text,
+  }))
 
   return {
     ok: true,
+    lang,
     preset: source.id || null,
     params: { dt, steps, record, escape, collisions: allowCollisions },
     bodies,
@@ -472,7 +665,7 @@ export function simulate(config) {
     eras,
     catastrophes,
     civilizations,
-    events,
+    events: localizedEvents,
     metrics,
     // Analysis series for the charts: the energy budget over time, and the
     // planet's phase-space portrait (position + velocity), which is what makes
@@ -482,8 +675,8 @@ export function simulate(config) {
     // response streamable for a 9000-step run.
     energyCurve: downsample(energyCurve, 240),
     phase: downsample(phase, 420),
-    summary: summarize(metrics, events, track),
-    reading: readingOf({ metrics, catastrophes, civilizations, eras, track }),
+    summary: summarize(metrics, events, track, lang),
+    reading: readingOf({ metrics, catastrophes, civilizations, eras, track, lang }),
   }
 }
 
@@ -492,21 +685,37 @@ export function simulate(config) {
  * check against the numbers above it, not decoration: this is what makes the
  * simulation an argument about the novels rather than a screensaver.
  */
-export function readingOf({ metrics, catastrophes, civilizations, eras, track }) {
+export function readingOf({ metrics, catastrophes, civilizations, eras, track, lang }) {
   const angles = []
+  const en = lang === 'en'
+  // Stable identifiers, never display text: the filters below must keep working
+  // after the label is translated, and a CSS selector keyed on `data-severity`
+  // would silently stop matching if the value became prose.
+  const isLethal = (c) => c.severity === 'devastating' || c.severity === 'lethal'
+  const isFatal = (c) => isLethal(c) || c.severity === 'extreme'
 
   // 1. Physics: is the numerical solution trustworthy?
   const driftPct = metrics.integratorDrift * 100
+  const physicsVerdict = driftPct < 0.1 ? 'credible' : driftPct < 1 ? 'acceptable' : 'cautious'
   angles.push({
     id: 'physics',
-    title: '数值可信度',
-    verdict: driftPct < 0.1 ? '可信' : driftPct < 1 ? '可接受' : '需要谨慎',
-    text: '积分 ' + metrics.steps + ' 步，自适应子步把平均步长压到 1/'
-      + (metrics.substepRatio > 0 ? metrics.substepRatio.toFixed(2) : '1')
-      + '。能量漂移 ' + driftPct.toFixed(3) + '%，角动量漂移 ' + (metrics.angularDrift * 100).toFixed(4)
-      + '%。' + (driftPct < 0.1
-        ? '这个量级下，轨道形状与交会时刻都是可信的。'
-        : '漂移已经影响到长期轨道，读数只能当定性参考。'),
+    title: en ? 'Numerical credibility' : '数值可信度',
+    verdict: severityLabel(physicsVerdict, lang),
+    verdictKey: physicsVerdict,
+    tone: physicsVerdict === 'credible' ? 'good' : 'neutral',
+    text: en
+      ? 'Integrated ' + metrics.steps + ' steps, with adaptive substeps pressing the average step down to 1/'
+        + (metrics.substepRatio > 0 ? metrics.substepRatio.toFixed(2) : '1')
+        + '. Energy drift ' + driftPct.toFixed(3) + '%, angular momentum drift '
+        + (metrics.angularDrift * 100).toFixed(4) + '%.' + (driftPct < 0.1
+        ? ' At this magnitude both the orbit shapes and the encounter times are trustworthy.'
+        : ' The drift already affects long-term orbits, so the readings are qualitative only.')
+      : '积分 ' + metrics.steps + ' 步，自适应子步把平均步长压到 1/'
+        + (metrics.substepRatio > 0 ? metrics.substepRatio.toFixed(2) : '1')
+        + '。能量漂移 ' + driftPct.toFixed(3) + '%，角动量漂移 ' + (metrics.angularDrift * 100).toFixed(4)
+        + '%。' + (driftPct < 0.1
+          ? '这个量级下，轨道形状与交会时刻都是可信的。'
+          : '漂移已经影响到长期轨道，读数只能当定性参考。'),
   })
 
   // 2. Chaos: is it periodic or not?
@@ -516,26 +725,46 @@ export function readingOf({ metrics, catastrophes, civilizations, eras, track })
   // whose planet is repeatedly cooked by three suns is stable only in the
   // narrow orbital sense — the reading must not claim it is benign.
   const grazing = Number.isFinite(metrics.closestApproach) && metrics.closestApproach < 0.1
-  const lethal = (catastrophes || []).filter((c) => c.severity === '毁灭' || c.severity === '致命')
+  const lethal = (catastrophes || []).filter(isLethal)
   const orbitalStable = metrics.stable && !grazing
+  const chaosVerdict = orbitalStable && lethal.length ? 'stable-with-catastrophes'
+    : orbitalStable ? 'stable'
+      : eject.length ? 'ejected' : metrics.collapsed ? 'merged' : grazing ? 'grazing' : 'chaotic'
   angles.push({
     id: 'chaos',
-    title: '稳定还是混沌',
-    verdict: orbitalStable && lethal.length ? '轨道稳定但有灾变'
-      : orbitalStable ? '稳定'
-        : eject.length ? '飞散' : metrics.collapsed ? '并合' : grazing ? '近距离交会' : '混沌',
+    title: en ? 'Stable or chaotic' : '稳定还是混沌',
+    verdict: severityLabel(chaosVerdict, lang),
+    verdictKey: chaosVerdict,
+    tone: orbitalStable ? 'good' : 'warn',
     text: orbitalStable && lethal.length
-      ? '单看恒星，系统是束缚的（最近交会 ' + metrics.closestApproach
-        + '），没有任何一颗飞出；但对行星上的生命来说它毫不温和——这段推演里出现了 '
-        + lethal.length + ' 次致命天象。稳定的轨道不等于宜居。'
+      ? (en
+        ? 'Judging the stars alone, the system is bound (closest approach ' + metrics.closestApproach
+          + ') and none of them flew out; but it is anything but gentle for life on the planet — this run produced '
+          + lethal.length + ' lethal sky events. A stable orbit is not a habitable one.'
+        : '单看恒星，系统是束缚的（最近交会 ' + metrics.closestApproach
+          + '），没有任何一颗飞出；但对行星上的生命来说它毫不温和——这段推演里出现了 '
+          + lethal.length + ' 次致命天象。稳定的轨道不等于宜居。')
       : orbitalStable
-        ? '系统在整段积分里保持束缚，最近距离 ' + (metrics.closestApproach ?? '—')
-          + '：这是一个周期或准周期的解，三体问题里真正的稀有品。'
+        ? (en
+          ? 'The system stays bound for the whole integration, with the closest approach at '
+            + (metrics.closestApproach ?? '—')
+            + ': a periodic or quasi-periodic solution, the genuine rarity of the three-body problem.'
+          : '系统在整段积分里保持束缚，最近距离 ' + (metrics.closestApproach ?? '—')
+            + '：这是一个周期或准周期的解，三体问题里真正的稀有品。')
         : grazing && !eject.length
-          ? '能量虽然守住了，但两颗星最近只到 ' + metrics.closestApproach
-            + '——这种擦身而过的交会把轨道彻底改写，正是三体问题不可预测的来源。'
-          : '系统没有回到初始状态，也没有守恒地绕下去：最近一次交会只到 ' + (metrics.closestApproach ?? '—')
-            + '，最大分离 ' + metrics.maxSeparation + '。这正是「不可预测」的含义。',
+          ? (en
+            ? 'Energy was conserved, but the two stars still came within ' + metrics.closestApproach
+              + ' — a close pass like that rewrites the orbits completely, and it is exactly where the '
+              + 'unpredictability of the three-body problem comes from.'
+            : '能量虽然守住了，但两颗星最近只到 ' + metrics.closestApproach
+              + '——这种擦身而过的交会把轨道彻底改写，正是三体问题不可预测的来源。')
+          : (en
+            ? 'The system neither returned to its initial state nor conserved its way around: the closest '
+              + 'encounter reached only ' + (metrics.closestApproach ?? '—')
+              + ', with a maximum separation of ' + metrics.maxSeparation
+              + '. That is what "unpredictable" means.'
+            : '系统没有回到初始状态，也没有守恒地绕下去：最近一次交会只到 ' + (metrics.closestApproach ?? '—')
+              + '，最大分离 ' + metrics.maxSeparation + '。这正是「不可预测」的含义。'),
   })
 
   // 3. The planet's fate.
@@ -543,46 +772,86 @@ export function readingOf({ metrics, catastrophes, civilizations, eras, track })
   if (!civilizations.hasPlanet) {
     angles.push({
       id: 'planet',
-      title: '行星的处境',
-      verdict: '无行星',
-      text: '这套系统只有恒星。它照样有恒纪元与乱纪元，但没有地表可以见证它们——这本身就是三体世界的一种可能。',
+      title: en ? 'The planet' : '行星的处境',
+      verdict: severityLabel('no-planet', lang),
+      verdictKey: 'no-planet',
+      tone: 'neutral',
+      text: en
+        ? 'This system is stars only. It still has Stable and Chaotic Eras, but no surface to witness them — '
+          + 'which is itself one of the possibilities for the Trisolaran world.'
+        : '这套系统只有恒星。它照样有恒纪元与乱纪元，但没有地表可以见证它们——这本身就是三体世界的一种可能。',
     })
   } else if (planetGone) {
     angles.push({
       id: 'planet',
-      title: '行星的处境',
-      verdict: '已飞散',
-      text: '行星在 t=' + ((metrics.ejected.find((e) => e.id === 'planet') || {}).t ?? '?')
-        + ' 被抛出系统，此后的恒纪元与乱纪元与它无关：整个文明被冻进真空，连被烤焦的机会都没有。',
+      title: en ? 'The planet' : '行星的处境',
+      verdict: severityLabel('planet-ejected', lang),
+      verdictKey: 'planet-ejected',
+      tone: 'warn',
+      text: en
+        ? 'The planet was thrown out of the system at t='
+          + ((metrics.ejected.find((e) => e.id === 'planet') || {}).t ?? '?')
+          + '. The Stable and Chaotic Eras that follow no longer concern it: the whole civilization is frozen '
+          + 'into vacuum, without even the chance to be scorched.'
+        : '行星在 t=' + ((metrics.ejected.find((e) => e.id === 'planet') || {}).t ?? '?')
+          + ' 被抛出系统，此后的恒纪元与乱纪元与它无关：整个文明被冻进真空，连被烤焦的机会都没有。',
     })
   } else {
-    const fatal = catastrophes.filter((c) => c.severity === '毁灭' || c.severity === '致命' || c.severity === '极端')
+    const fatal = catastrophes.filter(isFatal)
+    const planetVerdict = fatal.length ? fatal[0].kind
+      : civilizations.completed > 0 ? 'barely-habitable' : 'uninhabitable'
     angles.push({
       id: 'planet',
-      title: '行星的处境',
-      verdict: fatal.length ? fatal[0].kind : civilizations.completed > 0 ? '勉强宜居' : '不宜居',
-      text: civilizations.headline
+      title: en ? 'The planet' : '行星的处境',
+      verdict: fatal.length ? (fatal[0].kindLabel || catastropheLabel(fatal[0].kind, lang)) : severityLabel(planetVerdict, lang),
+      verdictKey: planetVerdict,
+      tone: fatal.length ? 'warn' : 'neutral',
+      text: civilizationsText(civilizations, lang)
         + (fatal.length
-          ? ' 最致命的一次是 t=' + fatal[0].t + ' 的' + fatal[0].kind + '：' + fatal[0].text
-          : ' 整段推演里没有出现致命天象。')
-        + ' 恒纪元平均 ' + civilizations.averageStable + '，乱纪元平均 ' + civilizations.averageChaotic + '。',
+          ? (en
+            ? ' The deadliest was the ' + (fatal[0].kindLabel || catastropheLabel(fatal[0].kind, lang))
+              + ' at t=' + fatal[0].t + ': ' + fatal[0].text
+            : ' 最致命的一次是 t=' + fatal[0].t + ' 的' + (fatal[0].kindLabel || catastropheLabel(fatal[0].kind, lang))
+              + '：' + fatal[0].text)
+          : (en ? ' No lethal sky event occurred during this run.' : ' 整段推演里没有出现致命天象。'))
+        + (en
+          ? ' Stable Eras average ' + civilizations.averageStable + ', Chaotic Eras average '
+            + civilizations.averageChaotic + '.'
+          : ' 恒纪元平均 ' + civilizations.averageStable + '，乱纪元平均 ' + civilizations.averageChaotic + '。'),
     })
   }
 
   // 4. What it says about the novel.
+  const novelVerdict = civilizations.generations > 1 ? 'rebuilt-repeatedly'
+    : planetGone ? 'civilization-exiled' : civilizations.generations === 1 ? 'single-generation' : 'no-civilization'
   angles.push({
     id: 'novel',
-    title: '与原著对照',
-    verdict: civilizations.generations > 1 ? '文明反复重建'
-      : planetGone ? '文明被放逐' : civilizations.generations === 1 ? '单代文明' : '没有文明',
+    title: en ? 'Against the novel' : '与原著对照',
+    verdict: severityLabel(novelVerdict, lang),
+    verdictKey: novelVerdict,
+    tone: civilizations.generations > 1 ? 'warn' : 'neutral',
     text: civilizations.generations > 1
-      ? '「一百多号文明」并不是修辞：只要三颗太阳还在，恒纪元就会结束，文明就得从零开始。这次推演里它重来了 '
-        + civilizations.generations + ' 次，' + civilizations.destroyed + ' 次是被灾变直接打断的。'
+      ? (en
+        ? '"Over a hundred civilizations" is not a figure of speech: as long as the three suns are there, the '
+          + 'Stable Era will end and civilization has to start from zero. In this run it restarted '
+          + civilizations.generations + ' times, ' + civilizations.destroyed
+          + ' of them cut short by a catastrophe.'
+        : '「一百多号文明」并不是修辞：只要三颗太阳还在，恒纪元就会结束，文明就得从零开始。这次推演里它重来了 '
+          + civilizations.generations + ' 次，' + civilizations.destroyed + ' 次是被灾变直接打断的。')
       : planetGone
-        ? '行星被甩进深空之后，文明并没有被毁灭，而是被流放了：这对应原著里三体人「必须离开」的那个结论。'
+        ? (en
+          ? 'Once the planet was flung into deep space, the civilization was not destroyed but exiled: this is '
+            + 'the conclusion the Trisolarans reached — they had to leave.'
+          : '行星被甩进深空之后，文明并没有被毁灭，而是被流放了：这对应原著里三体人「必须离开」的那个结论。')
         : civilizations.generations === 1
-          ? '这次只出现了一代文明，而且它活到了最后。原著里这是极小概率的分支——三体人不敢赌，所以他们选择了离开。'
-          : '没有文明出现。这提醒你：能孕育文明的三体系统，本身就是一次幸运的偶然。',
+          ? (en
+            ? 'Only one civilization appeared this time, and it survived to the end. In the novel this is a '
+              + 'vanishingly unlikely branch — the Trisolarans would not gamble on it, so they chose to leave.'
+            : '这次只出现了一代文明，而且它活到了最后。原著里这是极小概率的分支——三体人不敢赌，所以他们选择了离开。')
+          : (en
+            ? 'No civilization appeared. That is the reminder: a three-body system capable of harbouring life '
+              + 'is itself a lucky accident.'
+            : '没有文明出现。这提醒你：能孕育文明的三体系统，本身就是一次幸运的偶然。'),
   })
 
   return angles
@@ -662,15 +931,16 @@ export function detectCatastrophes(frames, finalBodies, eras) {
         const close = inTriangleRun.minNearest < 2.2
         found.push({
           type: close ? 'triple-sun' : 'triple-up',
-          kind: close ? '三日凌空' : '三日同现',
+          kind: close ? 'tri-solar-day' : 'tri-solar-appearance',
           t: Number(inTriangleRun.t.toFixed(2)),
           end: Number(t.toFixed(2)),
           duration: Number(duration.toFixed(2)),
-          severity: close ? '致命' : '灼热',
-          text: close
-            ? '三颗恒星同时高悬，且都离得很近：地表温度失控，岩石熔化，文明被烤成焦土。'
-            : '三颗恒星同时升上天空。日照翻了几倍，但还不是灭顶之灾——地表的文明必须躲进地下。',
+          severity: close ? 'lethal' : 'scorching',
+          textKey: close ? 'tri-solar-day' : 'tri-solar-appearance',
+          text: catastropheText({ textKey: close ? 'tri-solar-day' : 'tri-solar-appearance' }, 'zh'),
+          textEn: catastropheText({ textKey: close ? 'tri-solar-day' : 'tri-solar-appearance' }, 'en'),
           detail: '最近的一颗恒星距行星 ' + inTriangleRun.minNearest.toFixed(2) + ' 个距离单位。',
+          detailEn: 'The nearest star is ' + inTriangleRun.minNearest.toFixed(2) + ' distance units from the planet.',
         })
       }
       inTriangleRun = null
@@ -698,14 +968,18 @@ export function detectCatastrophes(frames, finalBodies, eras) {
         cooldown.triple = alignmentRun
         found.push({
           type: 'triple-alignment',
-          kind: '三日连珠',
+          kind: 'syzygy',
           t: Number(alignmentRun.toFixed(2)),
           end: Number(t.toFixed(2)),
           duration: Number(duration.toFixed(2)),
-          severity: '极端',
-          text: '三颗恒星排成一线、行星正好在这条线上：引力叠加撕扯地壳，日照同时推到致命的量级。',
+          severity: 'extreme',
+          textKey: 'syzygy',
+          text: catastropheText({ textKey: 'syzygy' }, 'zh'),
+          textEn: catastropheText({ textKey: 'syzygy' }, 'en'),
           detail: '三颗恒星的连线偏差 ' + (cross / Math.max(longest, 1e-6)).toFixed(3)
             + '，行星偏离这条线 ' + offLine.toFixed(2) + '。',
+          detailEn: 'The alignment deviation of the three suns is ' + (cross / Math.max(longest, 1e-6)).toFixed(3)
+            + ', and the planet is ' + offLine.toFixed(2) + ' off that line.',
         })
       }
       alignmentRun = null
@@ -719,17 +993,20 @@ export function detectCatastrophes(frames, finalBodies, eras) {
       if (d < roche && t - cooldown.tidal > 0.5) {
         cooldown.tidal = t
         const devoured = d < (s.physicalRadius || 0) + planetRadius
+        const tidalKey = devoured ? 'planet-devoured' : 'tidal-disruption'
         found.push({
           type: 'tidal',
-          kind: devoured ? '行星被吞噬' : '潮汐撕裂',
+          kind: tidalKey,
           t: Number(t.toFixed(2)),
           end: Number(t.toFixed(2)),
           duration: 0,
-          severity: '毁灭',
-          text: devoured
-            ? '行星坠入恒星，整个文明在几分钟内汽化。'
-            : '恒星的潮汐力超过行星自身的引力束缚：地壳被撕开，岩浆喷向太空。',
+          severity: 'devastating',
+          textKey: tidalKey,
+          text: catastropheText({ textKey: tidalKey }, 'zh'),
+          textEn: catastropheText({ textKey: tidalKey }, 'en'),
           detail: s.name + ' 掠过时距离仅 ' + d.toFixed(4) + '，罗希极限为 ' + roche.toFixed(4) + '。',
+          detailEn: s.name + ' passed at a distance of only ' + d.toFixed(4)
+            + ', with a Roche limit of ' + roche.toFixed(4) + '.',
         })
       }
     }
@@ -739,17 +1016,19 @@ export function detectCatastrophes(frames, finalBodies, eras) {
   if (inTriangleRun !== null) {
     const t = frames[frames.length - 1].t
     const close = inTriangleRun.minNearest < 2.2
+    const persistKey = close ? 'tri-solar-day-persisting' : 'tri-solar-appearance-persisting'
     found.push({
       type: close ? 'triple-sun' : 'triple-up',
-      kind: close ? '三日凌空' : '三日同现',
+      kind: close ? 'tri-solar-day' : 'tri-solar-appearance',
       t: Number(inTriangleRun.t.toFixed(2)),
       end: Number(t.toFixed(2)),
       duration: Number((t - inTriangleRun.t).toFixed(2)),
-      severity: close ? '致命' : '灼热',
-      text: close
-        ? '行星同时被三颗恒星近距离照射，一直持续到推演结束。'
-        : '三颗恒星同时挂在天上，一直持续到推演结束。',
+      severity: close ? 'lethal' : 'scorching',
+      textKey: persistKey,
+      text: catastropheText({ textKey: persistKey }, 'zh'),
+      textEn: catastropheText({ textKey: persistKey }, 'en'),
       detail: '这场凌空没有结束——对地表文明来说，这意味着结局。',
+      detailEn: 'This Tri-Solar Day never ended — for a surface civilization, that means the end.',
     })
   }
 
@@ -784,6 +1063,8 @@ export function civilizationHistory(eras, catastrophes, options = {}) {
       completed: 0,
       destroyed: 0,
       headline: '这套系统里没有行星，也就没有地表可以孕育文明——恒纪元/乱纪元只是它自己的天气。',
+      headlineEn: 'This system has no planet, so there is no surface to harbour a civilization — the '
+        + 'Stable and Chaotic Eras are just its own weather.',
       timeline: [],
       chaosWindows: (eras || []).filter((e) => e.kind === 'chaotic').length,
       averageStable: 0,
@@ -824,6 +1105,12 @@ export function civilizationHistory(eras, catastrophes, options = {}) {
       ? '这颗行星从未稳定到足以孕育文明。'
       : '在这 ' + totalSpan.toFixed(1) + ' 个时间单位里，行星上先后出现 ' + timeline.length
         + ' 代文明：' + completed + ' 代熬到了下一次乱纪元，' + destroyed + ' 代被灾变直接抹去。',
+    headlineEn: timeline.length === 0
+      ? 'This planet was never stable long enough to harbour a civilization.'
+      : 'Over ' + totalSpan.toFixed(1) + ' time units the planet raised ' + timeline.length
+        + (timeline.length === 1 ? ' generation of civilization: ' : ' generations of civilization: ')
+        + completed + ' lasted until the next Chaotic Era, '
+        + destroyed + ' were erased by a catastrophe outright.',
     timeline,
     chaosWindows: chaos.length,
     averageStable: stable.length
@@ -840,7 +1127,7 @@ export function civilizationHistory(eras, catastrophes, options = {}) {
  * 恒纪元 when the flux sits in a comfortable band for a while, 乱纪元 when it
  * swings wildly. A "civilization" is one 恒纪元 window.
  */
-export function eraSegments(track) {
+export function eraSegments(track, lang) {
   if (!track || track.length < 8) return []
   const fluxes = track.map((p) => p.flux).filter((f) => Number.isFinite(f) && f > 0)
   if (!fluxes.length) return []
@@ -889,33 +1176,54 @@ export function eraSegments(track) {
     cleaned[cleaned.length - 1].end = last.end
   }
 
+  const en = lang === 'en'
   return cleaned.map((seg) => ({
     kind: seg.kind,
-    label: seg.kind === 'stable' ? '恒纪元' : '乱纪元',
+    label: en
+      ? (seg.kind === 'stable' ? 'Stable Era' : 'Chaotic Era')
+      : (seg.kind === 'stable' ? '恒纪元' : '乱纪元'),
+    labelEn: seg.kind === 'stable' ? 'Stable Era' : 'Chaotic Era',
     start: Number(seg.start.toFixed(2)),
     end: Number(seg.end.toFixed(2)),
     duration: Number((seg.end - seg.start).toFixed(2)),
     star: seg.lastNearest || '',
+    starEn: seg.lastNearestEn || seg.lastNearest || '',
   }))
 }
 
-function summarize(metrics, events, track) {
+function summarize(metrics, events, track, lang) {
+  const en = lang === 'en'
   const lines = []
   if (metrics.stable) {
-    lines.push('整个积分过程能量漂移 ' + (metrics.energyDrift * 100).toFixed(2) + '%，系统保持束缚。')
+    lines.push(en
+      ? 'Energy drift over the whole integration is ' + (metrics.energyDrift * 100).toFixed(2)
+        + '%, and the system stays bound.'
+      : '整个积分过程能量漂移 ' + (metrics.energyDrift * 100).toFixed(2) + '%，系统保持束缚。')
   } else {
-    lines.push('能量漂移 ' + (metrics.energyDrift * 100).toFixed(2) + '%，' + (metrics.ejected.length
-      ? metrics.ejected.length + ' 个天体被抛出系统。'
-      : '系统发生了碰撞合并。'))
+    lines.push(en
+      ? 'Energy drift ' + (metrics.energyDrift * 100).toFixed(2) + '%; '
+        + (metrics.ejected.length
+          ? metrics.ejected.length + (metrics.ejected.length === 1 ? ' body was' : ' bodies were') + ' ejected.'
+          : 'the system underwent a collisional merge.')
+      : '能量漂移 ' + (metrics.energyDrift * 100).toFixed(2) + '%，' + (metrics.ejected.length
+        ? metrics.ejected.length + ' 个天体被抛出系统。'
+        : '系统发生了碰撞合并。'))
   }
   const eject = events.filter((e) => e.type === 'eject')
-  if (eject.length) lines.push('最先离开的是' + eject[0].text + '。')
+  if (eject.length) {
+    // The event text is already a full sentence ("X was ejected ..."), so the
+    // English branch must not wrap it in another one.
+    lines.push(en ? eject[0].textEn || eject[0].text : '最先离开的是' + eject[0].text + '。')
+  }
   if (track.length) {
     const minD = track.reduce((m, p) => Math.min(m, p.d || Infinity), Infinity)
     const maxD = track.reduce((m, p) => Math.max(m, p.d || 0), 0)
-    lines.push('行星与最近恒星的距离在 ' + minD.toFixed(2) + ' 与 ' + maxD.toFixed(2) + ' 之间摆动。')
+    lines.push(en
+      ? 'The planet\'s distance to the nearest star swings between ' + minD.toFixed(2) + ' and '
+        + maxD.toFixed(2) + '.'
+      : '行星与最近恒星的距离在 ' + minD.toFixed(2) + ' 与 ' + maxD.toFixed(2) + ' 之间摆动。')
   }
-  return lines.join('')
+  return lines.join(en ? ' ' : '')
 }
 
 /* ------------------------------------------------------------------ *
@@ -946,7 +1254,14 @@ export function sensitivity(config) {
 
   const a = prepare(source)
   const b = prepare(source)
-  if (!a.length) return { epsilon, curve: [], divergentAt: null, verdict: '没有可积分的天体。' }
+  if (!a.length) {
+    return {
+      epsilon,
+      curve: [],
+      divergentAt: null,
+      verdict: (config && config.lang) === 'en' ? 'No bodies to integrate.' : '没有可积分的天体。',
+    }
+  }
   b[0].vx += epsilon
 
   const reference = Math.min(2, a.length - 1)
@@ -975,6 +1290,7 @@ export function sensitivity(config) {
   }
 
   const final = curve[curve.length - 1]
+  const en = (config && config.lang) === 'en'
   return {
     epsilon,
     steps,
@@ -984,10 +1300,20 @@ export function sensitivity(config) {
     curve: curve.map(({ t, sep }) => ({ t, sep })),
     growth: final ? Number((final.raw / epsilon).toExponential(2)) : null,
     verdict: divergentAt === null
-      ? '在这 ' + (steps * dt).toFixed(1) + ' 个时间单位内两条轨道几乎重合：该初始条件对微扰不敏感（或者积分时间还不够长）。'
-      : '仅把第 ' + (reference + 1) + ' 个天体的初速度改动 ' + epsilon + '，两条轨道在 t≈' + divergentAt
-        + ' 时已经明显分离（放大 ' + (final ? (final.raw / epsilon).toExponential(1) : '?') + ' 倍）。'
-        + '这不是数值误差，而是三体系统本身的初值敏感性——同一组物理定律，给出完全不同的一生。',
+      ? (en
+        ? 'The two orbits stay almost coincident for ' + (steps * dt).toFixed(1)
+          + ' time units: this initial condition is insensitive to the perturbation (or the integration '
+          + 'is not long enough yet).'
+        : '在这 ' + (steps * dt).toFixed(1) + ' 个时间单位内两条轨道几乎重合：该初始条件对微扰不敏感（或者积分时间还不够长）。')
+      : (en
+        ? 'Changing only the initial velocity of body ' + (reference + 1) + ' by ' + epsilon
+          + ', the two orbits are already clearly separated at t≈' + divergentAt
+          + ' (amplified ' + (final ? (final.raw / epsilon).toExponential(1) : '?') + 'x).'
+          + ' This is not numerical error but the initial-value sensitivity of the three-body system itself — '
+          + 'the same set of physical laws, two completely different lifetimes.'
+        : '仅把第 ' + (reference + 1) + ' 个天体的初速度改动 ' + epsilon + '，两条轨道在 t≈' + divergentAt
+          + ' 时已经明显分离（放大 ' + (final ? (final.raw / epsilon).toExponential(1) : '?') + ' 倍）。'
+          + '这不是数值误差，而是三体系统本身的初值敏感性——同一组物理定律，给出完全不同的一生。'),
   }
 }
 
@@ -1062,14 +1388,19 @@ export function stabilityScan(options = {}) {
     })
   }
   const total = points.length
+  const en = options.lang === 'en'
   return {
     samples: total,
     buckets,
     share: Object.fromEntries(Object.entries(buckets).map(([k, v]) => [k, Number(((v / total) * 100).toFixed(1))])),
     points,
-    verdict: '在 ' + total + ' 组随机初始条件里，只有 ' + buckets.stable + ' 组（'
-      + ((buckets.stable / total) * 100).toFixed(1) + '%）保持束缚；'
-      + (buckets.eject) + ' 组飞散，' + buckets.collapse + ' 组发生碰撞合并。',
+    verdict: en
+      ? 'Out of ' + total + ' random initial conditions, only ' + buckets.stable + ' ('
+        + ((buckets.stable / total) * 100).toFixed(1) + '%) stayed bound; '
+        + buckets.eject + ' were ejected and ' + buckets.collapse + ' underwent a collisional merge.'
+      : '在 ' + total + ' 组随机初始条件里，只有 ' + buckets.stable + ' 组（'
+        + ((buckets.stable / total) * 100).toFixed(1) + '%）保持束缚；'
+        + (buckets.eject) + ' 组飞散，' + buckets.collapse + ' 组发生碰撞合并。',
   }
 }
 
@@ -1154,10 +1485,10 @@ export function civilizationCensus(options = {}) {
         if (!seen.has(p.index)) { seen.add(p.index); merged.push(p) }
       }
       merged.sort((a, b) => a.index - b.index)
-      out.aggregate = foldCensus(merged, total)
+      out.aggregate = foldCensus(merged, total, options.lang)
       out.complete = merged.length === total
     } else if (points.length === total) {
-      out.aggregate = aggregateCensus(points, total)
+      out.aggregate = aggregateCensus(points, total, options.lang)
       out.complete = true
     } else {
       out.complete = false
@@ -1262,7 +1593,7 @@ function runSamples({ seed, steps, from, to, seedFor }) {
  * Only rows produced by runSamples above are folded, so nothing here invents a
  * number — it is arithmetic over integrations this process ran.
  */
-export function foldCensus(rows, total) {
+export function foldCensus(rows, total, lang) {
   const pts = (rows || []).filter((p) => p && Number.isFinite(p.generations))
   const gens = pts.map((p) => p.generations)
   const histogram = {}
@@ -1301,11 +1632,11 @@ export function foldCensus(rows, total) {
     planetGone: escaped + merged,
     barren,
     correlation: Number(pearson(pts.map((p) => p.stableSpan || 0), gens).toFixed(3)),
-    verdict: buildCensusVerdict({ total: n, mean, max: best, barren, escaped, merged, histogram }),
+    verdict: buildCensusVerdict({ total: n, mean, max: best, barren, escaped, merged, histogram, lang: lang }),
   }
 }
 
-function aggregateCensus(points, total) {
+function aggregateCensus(points, total, lang) {
   const generations = points.map((p) => p.generations)
   const histogram = {}
   for (const g of generations) histogram[g] = (histogram[g] || 0) + 1
@@ -1349,7 +1680,7 @@ function aggregateCensus(points, total) {
       points.map((p) => p.stableSpan),
       generations,
     ).toFixed(3)),
-    verdict: buildCensusVerdict({ total, mean, max, barren, escaped, merged, histogram }),
+    verdict: buildCensusVerdict({ total, mean, max, barren, escaped, merged, histogram, lang }),
   }
 }
 
@@ -1370,9 +1701,17 @@ function pearson(xs, ys) {
   return den === 0 ? 0 : num / den
 }
 
-function buildCensusVerdict({ total, mean, max, barren, escaped, merged, histogram }) {
+function buildCensusVerdict({ total, mean, max, barren, escaped, merged, histogram, lang }) {
   const best = Object.keys(histogram).map(Number).sort((a, b) => b - a)[0]
   const gone = escaped + merged
+  if (lang === 'en') {
+    return 'Across ' + total + ' random initial conditions the planet raises ' + mean.toFixed(2)
+      + ' generations of civilization on average, at most ' + best + '; ' + barren + ' runs ('
+      + ((barren / total) * 100).toFixed(0) + '%) never produced a single one. In ' + gone + ' runs ('
+      + ((gone / total) * 100).toFixed(0) + '%) the planet ended up gone — ' + escaped
+      + ' were ejected from the system and ' + merged + ' were swallowed by a star. '
+      + 'This is not a scripted outcome: every run is a real gravitational integration.'
+  }
   return '在 ' + total + ' 组随机初始条件里，平均只孕育 ' + mean.toFixed(2) + ' 代文明，'
     + '最多 ' + best + ' 代；' + barren + ' 组（' + ((barren / total) * 100).toFixed(0)
     + '%）连一代都没能出现。' + gone + ' 组（' + ((gone / total) * 100).toFixed(0)
@@ -1450,6 +1789,7 @@ export function darkForest(options = {}) {
   const survivors = population.filter((c) => c.alive)
   const avgTech = population.reduce((n, c) => n + c.tech, 0) / population.length
   const survivorsTech = survivors.length ? survivors.reduce((n, c) => n + c.tech, 0) / survivors.length : 0
+  const en = options.lang === 'en'
   return {
     params: { civs, rounds, suspicion, explosion, cost },
     history,
@@ -1459,14 +1799,24 @@ export function darkForest(options = {}) {
     survivalRate: Number(((survivors.length / civs) * 100).toFixed(1)),
     finalTech: Number(survivorsTech.toFixed(3)),
     verdict: survivors.length <= 1
-      ? '经过 ' + rounds + ' 轮，宇宙里只剩下 ' + survivors.length + ' 个文明：黑暗森林里没有赢家，只有最后一个。'
-      : '经过 ' + strikes + ' 次打击，' + survivors.length + ' / ' + civs + ' 个文明存活（'
-        + ((survivors.length / civs) * 100).toFixed(1) + '%）。猜疑阈值越高，打击越早、存活越少。',
+      ? (en
+        ? 'After ' + rounds + ' rounds only ' + survivors.length + ' civilizations are left in the universe: '
+          + 'the Dark Forest has no winners, only a last one standing.'
+        : '经过 ' + rounds + ' 轮，宇宙里只剩下 ' + survivors.length + ' 个文明：黑暗森林里没有赢家，只有最后一个。')
+      : (en
+        ? 'After ' + strikes + ' strikes, ' + survivors.length + ' / ' + civs + ' civilizations survive ('
+          + ((survivors.length / civs) * 100).toFixed(1) + '%). The higher the suspicion threshold, the earlier '
+          + 'the strikes and the fewer the survivors.'
+        : '经过 ' + strikes + ' 次打击，' + survivors.length + ' / ' + civs + ' 个文明存活（'
+          + ((survivors.length / civs) * 100).toFixed(1) + '%）。猜疑阈值越高，打击越早、存活越少。'),
     comparison: {
       avgTech: Number(avgTech.toFixed(3)),
       survivorsTech: Number(survivorsTech.toFixed(3)),
-      note: '存活者的平均技术水平 ' + survivorsTech.toFixed(2) + ' 对比全体 ' + avgTech.toFixed(2)
-        + '：能活下来的，往往是先动手的那一个。',
+      note: en
+        ? 'The survivors average a tech level of ' + survivorsTech.toFixed(2) + ' against ' + avgTech.toFixed(2)
+          + ' for the whole population: the ones who live are usually the ones who struck first.'
+        : '存活者的平均技术水平 ' + survivorsTech.toFixed(2) + ' 对比全体 ' + avgTech.toFixed(2)
+          + '：能活下来的，往往是先动手的那一个。',
     },
   }
 }
@@ -1508,6 +1858,7 @@ export function deterrence(options = {}) {
     })
   }
   const finalScore = Math.round((resolve * 0.45 + invasion * 0.2 + luck * 0.1 + (held ? 0.25 : 0)) * 100)
+  const en = options.lang === 'en'
   return {
     params: { resolve, invasion, luck },
     history,
@@ -1515,8 +1866,18 @@ export function deterrence(options = {}) {
     survival: alive,
     score: finalScore,
     verdict: held
-      ? '威慑维持成功：执剑人让敌人相信「他真的会按下按钮」，入侵在 ' + rounds + ' 轮内没有发生。'
-      : '威慑在第 ' + history.find((h) => !h.held).round + ' 轮破裂：执剑人的意志低于入侵的诱惑，人类失去谈判桌。',
-    insight: '威慑度不是善良的度量，而是「愿意同归于尽」的意愿强度。这也是罗辑与程心在同一天平上的差别。',
+      ? (en
+        ? 'Deterrence held: the Swordholder convinced the enemy that he really would press the button, and '
+          + 'the invasion did not happen within ' + rounds + ' rounds.'
+        : '威慑维持成功：执剑人让敌人相信「他真的会按下按钮」，入侵在 ' + rounds + ' 轮内没有发生。')
+      : (en
+        ? 'Deterrence collapsed in round ' + history.find((h) => !h.held).round
+          + ': the Swordholder\'s will was weaker than the lure of invasion, and humanity lost its seat at the table.'
+        : '威慑在第 ' + history.find((h) => !h.held).round
+          + ' 轮破裂：执剑人的意志低于入侵的诱惑，人类失去谈判桌。'),
+    insight: en
+      ? 'Deterrence is not a measure of kindness but of the willingness to go down together. That is exactly '
+        + 'the difference between Luo Ji and Cheng Xin on the same scale.'
+      : '威慑度不是善良的度量，而是「愿意同归于尽」的意愿强度。这也是罗辑与程心在同一天平上的差别。',
   }
 }

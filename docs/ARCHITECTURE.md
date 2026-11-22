@@ -45,13 +45,13 @@ L3  适配层      index.js    → engine.js        Host：11 个 Agent 工具 +
 
 | 文件 | 非空行 | 体积 |
 |---|---:|---:|
-| `client.js` | 3074 | 173.7 KB |
-| `sim.js` | 1427 | 64.2 KB |
+| `client.js` | 3095 | 175.0 KB |
+| `sim.js` | 1780 | 83.7 KB |
 | `data/characters.js` | 1326 | 83.9 KB |
 | `engine.js` | 1169 | 50.1 KB |
 | `data/lore.js` | 1167 | 67.6 KB |
-| `scripts/selfcheck.mjs` | 1136 | 69.7 KB |
-| `index.js` | 953 | 43.9 KB |
+| `scripts/selfcheck.mjs` | 1279 | 77.6 KB |
+| `index.js` | 985 | 45.0 KB |
 | `data/plot.js` | 749 | 50.8 KB |
 | `data/timeline.js` | 601 | 30.5 KB |
 | `scripts/probe.mjs` | 295 | 15.5 KB |
@@ -163,6 +163,34 @@ HTTP 路由合计  25 条   与 25 个 *_PATH 常量一一对应
    可见内容数（appearances + places + artifacts + 未锁定 relations）**从不减少**。
 
 第 3 项是遮蔽系统最容易写错的地方——提高剧透层级绝不能让内容消失。当前实现严格单调。
+
+## 六之二、双语政策（实测边界）
+
+界面的中英双语是完整的：`client.js` 内联 `ZH` / `EN` 两份词表，键数一致，
+`t()` 用到的键无一缺失。**模拟叙事也是双语的**，但图鉴正文不是。这条边界是
+`docs/I18N-DECISION.md` 记录过的决定（A 档「英文可用」，不是「英文完整」），
+实施细节见 `docs/PLAN-EN.md`。
+
+分三层看：
+
+| 层 | 状态 | 说明 |
+|---|---|---|
+| 界面文案 | 双语完整 | `ZH`/`EN` 各 256 键，缺键为 0 |
+| 模拟叙事 | 双语完整 | `simulate` / `sensitivity` / `stabilityScan` / `civilizationCensus` / `darkForest` / `deterrence` 全部随 `lang` 生成；`lang:'en'` 输出经断言确认无 CJK |
+| 图鉴正文 | 仅中文 | 人物、情节、设定的**描述**未译；**名称**全有英文（角色 56/56、地点 19/19、技术 24/24、术语 37/37） |
+| 原著引文 | 不译 | 30 条引文里 25 条 `verbatim: true` 是原文直引，翻译会变成伪造原文 |
+
+关键实现约束，改代码时不能忘：
+
+1. **判定必须用稳定 id，不能用文案。** `severity` / `kind` / `tone` /
+   `verdictKey` 是稳定标识，`severityLabel` / `kindLabel` 才是给人看的标签。
+   CSS 选择器与 `angle.tone === 'good'` 之类都挂在 id 上——曾经有三条
+   `[data-severity='毁灭']` 规则，一翻译就静默失效。
+2. **渲染在路由层选语言，不在客户端拼。** 客户端 `getJSON` 统一注入
+   `lang`，服务端 `langOf(body)` 归一化为 `'zh'` / `'en'`（非法值回退中文，
+   不抛错），再传给各函数。
+3. **物理与语言无关。** 同一组初值下 `lang:'zh'` 与 `lang:'en'` 的
+   `metrics`、`frames`、`eras` 逐位相同，已由自检断言。
 
 ## 七、已知边界与风险
 

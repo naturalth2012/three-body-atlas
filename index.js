@@ -85,6 +85,17 @@ function numberParam(params, key, fallback) {
 }
 
 /**
+ * Which language to assemble the narrative in.
+ *
+ * Deliberately total and non-throwing: an unknown, missing or hostile value must
+ * fall back to Chinese (the default the plugin has always shipped), never fail a
+ * request. Only the two known codes are honoured.
+ */
+function langOf(body) {
+  return body && body.lang === 'en' ? 'en' : 'zh'
+}
+
+/**
  * Whether a browser tells us this request came from another site.
  *
  * `webServer` admits every request itself: `register` hands the raw
@@ -565,50 +576,58 @@ export function apply(ctx) {
       async execute(args) {
         const preset = pickPreset(args && args.preset)
         const mode = (args && args.mode) || 'simulate'
+        // The tool's own description is English, so its report should be too:
+        // an agent that asked in English was otherwise handed Chinese prose.
+        const lang = 'en'
         if (mode === 'sensitivity') {
-          const s = sensitivity({ bodies: preset.bodies })
-          return { text: `${s.verdict}\n（${preset.name}，积分 ${s.span} 个时间单位，扰动 ε=${s.epsilon}）` }
+          const s = sensitivity({ bodies: preset.bodies, lang })
+          return { text: `${s.verdict}\n(${preset.nameEn || preset.name}, integrated over ${s.span} time units, perturbation ε=${s.epsilon})` }
         }
         if (mode === 'stability') {
-          const scan = stabilityScan({ samples: 60 })
+          const scan = stabilityScan({ samples: 60, lang })
           return {
-            text: [scan.verdict, '', '四种结局的占比：',
-              ...Object.entries(scan.share).map(([k, v]) => `- ${labelOfOutcome(k)}：${v}%`)].join('\n'),
+            text: [scan.verdict, '', 'Share of the four outcomes:',
+              ...Object.entries(scan.share).map(([k, v]) => `- ${labelOfOutcome(k)}: ${v}%`)].join('\n'),
           }
         }
         if (mode === 'dark-forest') {
-          const result = darkForest({})
+          const result = darkForest({ lang })
           return {
             text: [result.verdict, '', result.comparison.note,
-              `参数：文明 ${result.params.civs} 个、${result.params.rounds} 轮、猜疑 ${result.params.suspicion}、技术爆炸概率 ${result.params.explosion}。`].join('\n'),
+              `Parameters: ${result.params.civs} civilizations, ${result.params.rounds} rounds, `
+              + `suspicion ${result.params.suspicion}, tech-explosion probability ${result.params.explosion}.`].join('\n'),
           }
         }
         if (mode === 'deterrence') {
-          const result = deterrence({})
+          const result = deterrence({ lang })
           return { text: `${result.verdict}\n\n${result.insight}` }
         }
-        const result = simulate(preset)
+        const result = simulate(Object.assign({}, preset, { lang }))
         const m = result.metrics
-        const eras = result.eras.slice(0, 10).map((e) => `- ${e.label}：t=${e.start} → ${e.end}（${e.duration}），主要影响来自${e.star || '多颗恒星'}`)
+        const eras = result.eras.slice(0, 10).map((e) =>
+          `- ${e.labelEn || e.label}: t=${e.start} → ${e.end} (${e.duration}), mainly driven by ${e.starEn || e.star || 'several stars'}`)
         const cats = result.catastrophes.map((c) =>
-          `- t=${c.t} **${c.kind}**（${c.severity}，持续 ${c.duration}）：${c.text}\n  ${c.detail}`)
+          `- t=${c.t} **${c.kindLabel || c.kind}** (${c.severityLabel || c.severity}, lasting ${c.duration}): ${c.text}\n  ${c.detail}`)
         const civ = result.civilizations
-        const readings = result.reading.map((a) => `- **${a.title}**（${a.verdict}）：${a.text}`)
+        const readings = result.reading.map((a) => `- **${a.title}** (${a.verdict}): ${a.text}`)
         return {
           text: [
-            `**${preset.name}**（${preset.desc}）`,
+            `**${preset.nameEn || preset.name}** (${preset.descEn || preset.desc})`,
             '', result.summary,
-            `积分 ${m.steps} 步（t=${m.time}），能量漂移 ${(m.integratorDrift * 100).toFixed(3)}%`
-              + `（角动量漂移 ${(m.angularDrift * 100).toFixed(4)}%），自适应子步平均 1/${m.substepRatio}，`
-              + `最近交会 ${m.closestApproach ?? '—'}，剩余天体 ${m.bodiesLeft} 个。`,
-            '', '历法推演：', ...eras,
-            '', result.eras.length ? `共 ${result.eras.length} 段，其中恒纪元 ${result.eras.filter((e) => e.kind === 'stable').length} 段、乱纪元 ${result.eras.filter((e) => e.kind === 'chaotic').length} 段。` : '没有出现可辨认的纪元。',
-            '', '灾变记录：', ...(cats.length ? cats : ['- 这段推演里没有出现三日凌空、连珠、潮汐撕裂或吞噬。']),
-            '', '文明代数：', civ.headline,
+            `Integrated ${m.steps} steps (t=${m.time}), energy drift ${(m.integratorDrift * 100).toFixed(3)}%`
+              + ` (angular momentum drift ${(m.angularDrift * 100).toFixed(4)}%), adaptive substeps averaging 1/${m.substepRatio}, `
+              + `closest approach ${m.closestApproach ?? '—'}, bodies remaining ${m.bodiesLeft}.`,
+            '', 'Era calendar:', ...eras,
+            '', result.eras.length
+              ? `${result.eras.length} segments in total: ${result.eras.filter((e) => e.kind === 'stable').length} Stable Eras `
+                + `and ${result.eras.filter((e) => e.kind === 'chaotic').length} Chaotic Eras.`
+              : 'No recognisable era emerged.',
+            '', 'Catastrophes:', ...(cats.length ? cats : ['- No Tri-Solar Day, alignment, tidal disruption or engulfment in this run.']),
+            '', 'Civilization count:', civ.headline,
             ...(civ.timeline || []).slice(0, 8).map((g) =>
-              `- 第 ${g.generation} 代：t=${g.start} → ${g.end}（${g.duration}）`
-              + (g.endedBy ? `，终结于${g.endedBy}` : '，熬到了乱纪元')),
-            '', '四角度解读：', ...readings,
+              `- Generation ${g.generation}: t=${g.start} → ${g.end} (${g.duration})`
+              + (g.endedBy ? `, ended by ${g.endedBy}` : ', lasted until the Chaotic Era')),
+            '', 'Read from four angles:', ...readings,
           ].join('\n'),
         }
       },
@@ -955,17 +974,22 @@ export function apply(ctx) {
           return next
         })
       }
-      return simulate(config)
+      return simulate(Object.assign(config, { lang: langOf(body) }))
     }, 'three-body-atlas: simulate route')
 
     registerAction(SENS_PATH, (body) => {
       const preset = pickPreset(body && body.preset)
-      return sensitivity({ bodies: preset.bodies, epsilon: numberParam(new URLSearchParams(body || {}), 'epsilon', 1e-6) })
+      return sensitivity({
+        bodies: preset.bodies,
+        epsilon: numberParam(new URLSearchParams(body || {}), 'epsilon', 1e-6),
+        lang: langOf(body),
+      })
     }, 'three-body-atlas: sensitivity route')
 
     registerAction(SCAN_PATH, (body) => stabilityScan({
       samples: Math.round(Number((body && body.samples) || 60)),
       seed: Number((body && body.seed) || 20230806),
+      lang: langOf(body),
     }), 'three-body-atlas: stability route')
 
     // Batched: the client walks `offset` until `done`, and sends back the rows it
@@ -977,6 +1001,7 @@ export function apply(ctx) {
       steps: Math.round(Number((body && body.steps) || 16000)),
       seed: Number((body && body.seed) || 20230806),
       collected: Array.isArray(body && body.collected) ? body.collected : null,
+      lang: langOf(body),
     }), 'three-body-atlas: census route')
 
     registerAction(FOREST_PATH, (body) => darkForest({
@@ -986,6 +1011,7 @@ export function apply(ctx) {
       explosion: Number((body && body.explosion) ?? 0.06),
       cost: Number((body && body.cost) ?? 0.35),
       seed: Number((body && body.seed) || 42),
+      lang: langOf(body),
     }), 'three-body-atlas: dark forest route')
 
     registerAction(DETERRENCE_PATH, (body) => deterrence({
@@ -993,12 +1019,19 @@ export function apply(ctx) {
       invasion: Number((body && body.invasion) ?? 0.6),
       luck: Number((body && body.luck) ?? 0.5),
       seed: Number((body && body.seed) || 7),
+      lang: langOf(body),
     }), 'three-body-atlas: deterrence route')
   })
 }
 
 function labelOfOutcome(key) {
-  return { stable: '保持束缚（罕见）', chaotic: '混沌但未飞散', eject: '飞散', collapse: '碰撞合并' }[key] || key
+  // The tool's report is English (its description is), so the outcome labels are too.
+  return {
+    stable: 'stays bound (rare)',
+    chaotic: 'chaotic but not ejected',
+    eject: 'ejected',
+    collapse: 'collisional merge',
+  }[key] || key
 }
 
 function clamp(value, min, max) {

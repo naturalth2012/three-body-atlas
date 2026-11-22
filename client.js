@@ -49,6 +49,10 @@ window.__ModuleLoader__.load({
     const PREF_DONE = 'tba:done'
     const memoryPrefs = {}
 
+    /* The active language, kept module-level because `getJSON` lives outside the
+       panel's closure. Written once per locale change, read on every request. */
+    let activeLang = 'zh'
+
     const readPref = (key, fallback) => {
       try {
         const raw = window.localStorage.getItem(key)
@@ -268,6 +272,7 @@ window.__ModuleLoader__.load({
       simNoPhase: '这套系统没有行星，因此没有相位图。',
       simCatastrophes: '灾变记录',
       simNoCats: '这段推演里没有出现三日凌空、连珠、潮汐撕裂或吞噬。',
+      simDuration: '持续',
       simCivilizations: '文明的代数',
       simBench: '参数台',
       simBenchOpen: '展开',
@@ -436,6 +441,7 @@ window.__ModuleLoader__.load({
       simNoPhase: 'No planet in this system, so no phase portrait.',
       simCatastrophes: 'Catastrophes',
       simNoCats: 'No triple-sun, alignment, tidal disruption or engulfment in this run.',
+      simDuration: 'lasting',
       simCivilizations: 'Civilization generations',
       simBench: 'Parameter bench', simBenchOpen: 'Open', simBenchClose: 'Close',
       simBenchHint: 'Changing any initial value re-integrates the whole run — that is initial-value sensitivity itself.',
@@ -531,10 +537,13 @@ window.__ModuleLoader__.load({
     }
 
     const getJSON = async (url, body) => {
+      const withLang = (payload) => (payload && typeof payload === 'object' && !Array.isArray(payload)
+        ? Object.assign({}, payload, { lang: activeLang })
+        : payload)
       const init = body === undefined ? undefined : {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify(withLang(body)),
       }
       const res = await fetch(url, init)
       if (!res.ok) throw new Error('HTTP ' + res.status)
@@ -727,9 +736,12 @@ window.__ModuleLoader__.load({
         .tba-cat:hover{border-color:var(--dsw-alias-brand-primary)}
         .tba-cathead{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:4px}
         .tba-catkind{font-size:12.5px;font-weight:650}
-        .tba-catkind[data-severity='毁灭']{color:var(--dsw-alias-state-error-primary)}
-        .tba-catkind[data-severity='致命']{color:var(--dsw-alias-state-error-primary)}
-        .tba-catkind[data-severity='极端']{color:var(--dsw-alias-state-warn-primary)}
+        /* Keyed on the stable severity id, never the translated label: matching
+           on prose would silently lose these colours in the English UI. */
+        .tba-catkind[data-severity='devastating']{color:var(--dsw-alias-state-error-primary)}
+        .tba-catkind[data-severity='lethal']{color:var(--dsw-alias-state-error-primary)}
+        .tba-catkind[data-severity='extreme']{color:var(--dsw-alias-state-warn-primary)}
+        .tba-catkind[data-severity='scorching']{color:var(--dsw-alias-state-warn-primary)}
         .tba-catwhen{font-size:11.5px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
         .tba-cat p{margin:0;font-size:12.8px;color:var(--dsw-alias-label-secondary)}
         .tba-catdetail{margin-top:6px;font-size:11.5px;color:var(--dsw-alias-label-secondary);opacity:.85;font-variant-numeric:tabular-nums}
@@ -2032,9 +2044,9 @@ window.__ModuleLoader__.load({
               style: onSeek ? { cursor: 'pointer' } : undefined,
             },
               h('div', { className: 'tba-cathead' },
-                h('span', { className: 'tba-catkind', 'data-severity': c.severity }, c.kind),
-                h('span', { className: 'tba-catwhen' }, 't=' + c.t + (c.duration ? ' · 持续 ' + c.duration : '')),
-                h('span', { className: 'tba-badge' }, c.severity)),
+                h('span', { className: 'tba-catkind', 'data-severity': c.severity }, c.kindLabel || c.kind),
+                h('span', { className: 'tba-catwhen' }, 't=' + c.t + (c.duration ? ' · ' + t('simDuration') + ' ' + c.duration : '')),
+                h('span', { className: 'tba-badge' }, c.severityLabel || c.severity)),
               h('p', null, c.text),
               h('div', { className: 'tba-catdetail' }, c.detail))))
             : h('p', { className: 'tba-kicker' }, t('simNoCats')))
@@ -2072,7 +2084,9 @@ window.__ModuleLoader__.load({
         ...result.reading.map((angle) => h('div', { key: angle.id, className: 'tba-reading' },
           h('div', { className: 'tba-readinghead' },
             h('b', null, angle.title),
-            h('span', { className: 'tba-badge' + (angle.verdict === '可信' || angle.verdict === '稳定' ? ' tba-good' : '') }, angle.verdict)),
+            /* `tone` is a stable id from the engine; matching the verdict text
+               would break as soon as the label is translated. */
+            h('span', { className: 'tba-badge' + (angle.tone === 'good' ? ' tba-good' : '') }, angle.verdict)),
           h('p', null, angle.text))))
     }
 
@@ -3218,6 +3232,15 @@ window.__ModuleLoader__.load({
         const locale = ctx.get('locale')
         const currentMessages = () => (isEnglish(locale) ? EN : ZH)
         const t = () => makeTranslator(locale, currentMessages())
+
+        /* Keep the module-level language in step with the active locale, so the
+           narrative requests ask the server for the same language the UI shows. */
+        const syncLang = () => { activeLang = isEnglish(locale) ? 'en' : 'zh' }
+        syncLang()
+        ctx.effect(() => {
+          if (!locale || typeof locale.subscribe !== 'function') return undefined
+          return locale.subscribe(syncLang)
+        }, NS + ': lang')
 
         ctx.effect(() => {
           if (!locale || typeof locale.register !== 'function') return undefined
