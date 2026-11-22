@@ -21,10 +21,13 @@ const cases = [
   ['cross-site GET /bundle', { url: `${base}/bundle`, headers: { 'sec-fetch-site': 'cross-site' } }, 403],
   ['foreign Origin GET /bundle', { url: `${base}/bundle`, headers: { origin: 'https://evil.example' } }, 403],
   ['opaque Origin GET /bundle', { url: `${base}/bundle`, headers: { origin: 'null' } }, 403],
+  ['DNS rebinding GET /bundle', { url: `${base}/bundle`, headers: { host: 'evil.example', origin: 'http://evil.example' } }, 403],
+  ['rebound Host only GET /bundle', { url: `${base}/bundle`, headers: { host: 'evil.example' } }, 403],
   ['same-origin GET /detail', { url: `${base}/detail?id=luo-ji` }, 200],
   ['cross-site GET /detail', { url: `${base}/detail?id=luo-ji`, headers: { 'sec-fetch-site': 'cross-site' } }, 403],
   ['same-origin POST /simulate', { url: `${base}/simulate`, method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"preset":"trisolaris"}' }, 200],
   ['cross-site POST /simulate', { url: `${base}/simulate`, method: 'POST', headers: { 'content-type': 'application/json', 'sec-fetch-site': 'cross-site' }, body: '{"preset":"trisolaris"}' }, 403],
+  ['DNS rebinding POST /simulate', { url: `${base}/simulate`, method: 'POST', headers: { 'content-type': 'application/json', host: 'evil.example' }, body: '{"preset":"trisolaris"}' }, 403],
   ['same-origin POST /stability', { url: `${base}/stability`, method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"samples":8}' }, 200],
   ['cross-site POST /stability', { url: `${base}/stability`, method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://evil.example' }, body: '{"samples":8}' }, 403],
 ]

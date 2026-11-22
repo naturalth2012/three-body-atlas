@@ -91,16 +91,65 @@ function numberParam(params, key, fallback) {
  * own `readResource` documentation says so outright. The `dsh web` admission
  * check lives in the SPA fallback, and a named route matches *before* the
  * fallback, so a route registered here answers any page the browser loads.
- * That is the risk the market entry discloses.
+ * That is the risk the market entry disclosed.
  *
- * This rejects only a request that positively identifies as cross-site, which
- * keeps the panel's own same-origin calls working and leaves a non-browser
- * client (which sends neither header) alone. It is not authentication and does
- * not claim to be: it closes the stated hole — a web page calling these routes
- * — without inventing a token scheme over the same unauthenticated channel.
+ * Two things are checked, and the second is what makes the first hold:
+ *
+ * 1. The caller must not identify as cross-site (`sec-fetch-site`, a foreign
+ *    or opaque `Origin`).
+ * 2. The `Host` must be a loopback name or a literal IP address. Comparing
+ *    `Origin` against `Host` alone is not enough: DNS rebinding makes an
+ *    attacker page on `evil.example` reach 127.0.0.1 with *both* headers
+ *    reading `evil.example`, which a same-host comparison accepts. `webServer`
+ *    refuses to bind a wildcard address and takes only an IP literal, so a
+ *    legitimate request here always carries a loopback name or an IP — a
+ *    request whose `Host` is an ordinary domain is being rebound, and is
+ *    refused whatever its `Origin` says.
+ *
+ * This is not authentication and does not claim to be: it admits the panel's
+ * own same-origin calls and leaves a non-browser client, which sends neither
+ * header, alone.
  */
+const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
+
+/**
+ * Whether a `Host` header names something that is not this machine.
+ *
+ * `true` only when a `Host` is present *and* it is neither a loopback name nor
+ * a literal IP. A missing `Host` returns `false`: HTTP/1.1 always sends one, so
+ * its absence means a local client or a test double rather than a rebound
+ * browser, and treating that as hostile would break both without closing
+ * anything a rebinding attack can use — a rebound request always carries its
+ * domain.
+ */
+export function isForeignHostHeader(host) {
+  if (typeof host !== 'string' || host === '') return false
+  // Strip the port. IPv6 literals are bracketed, so split on the last colon
+  // only when the value is not a bracketed literal.
+  let name = host
+  if (name.startsWith('[')) {
+    const close = name.indexOf(']')
+    if (close === -1) return true
+    name = name.slice(0, close + 1)
+  } else {
+    const colon = name.lastIndexOf(':')
+    if (colon !== -1) name = name.slice(0, colon)
+  }
+  const lower = name.toLowerCase()
+  if (LOOPBACK_HOSTNAMES.has(lower)) return false
+  // Any other literal IP still addresses this machine's own listener.
+  const bare = lower.startsWith('[') ? lower.slice(1, -1) : lower
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(bare)) {
+    return !bare.split('.').every((part) => Number(part) <= 255)
+  }
+  return !(/^[0-9a-f:]+$/.test(bare) && bare.includes(':'))
+}
+
 export function isCrossSiteRequest(req) {
   const headers = (req && req.headers) || {}
+  // A Host that is an ordinary domain name is a rebound request, whatever the
+  // Origin claims. Checked first, so it cannot be talked past.
+  if (isForeignHostHeader(headers.host)) return true
   const site = headers['sec-fetch-site']
   if (typeof site === 'string' && site !== 'same-origin' && site !== 'none') return true
   const origin = headers.origin

@@ -1018,18 +1018,26 @@ console.log('\n## 路由跨站防护')
   const I = await import(new URL('../index.js', import.meta.url).href)
   assert(typeof I.isCrossSiteRequest === 'function', 'index.js 导出 isCrossSiteRequest')
   const crossSite = [
-    ['sec-fetch-site: cross-site', { 'sec-fetch-site': 'cross-site' }],
+    ['sec-fetch-site: cross-site', { host: '127.0.0.1:5894', 'sec-fetch-site': 'cross-site' }],
     ['foreign Origin', { origin: 'https://evil.example', host: '127.0.0.1:5894' }],
-    ['opaque Origin null', { origin: 'null' }],
+    ['opaque Origin null', { origin: 'null', host: '127.0.0.1:5894' }],
+    // Comparing Origin against Host alone accepts this: a rebound page reaches
+    // 127.0.0.1 with both headers reading its own domain. The Host allowlist is
+    // what closes it, so this case is the one that must never regress.
+    ['DNS rebinding (Host=Origin=domain)', { host: 'evil.example', origin: 'http://evil.example' }],
+    ['rebound Host, no Origin', { host: 'evil.example' }],
   ]
   for (const [label, headers] of crossSite) {
     assert(I.isCrossSiteRequest({ headers }) === true, `拒绝跨站请求（${label}）`)
   }
   const sameSite = [
-    ['same-origin fetch without Origin', {}],
+    ['same-origin fetch without Origin', { host: '127.0.0.1:5894' }],
     ['same-origin POST', { origin: 'http://127.0.0.1:5894', host: '127.0.0.1:5894' }],
-    ['sec-fetch-site: same-origin', { 'sec-fetch-site': 'same-origin' }],
+    ['sec-fetch-site: same-origin', { host: '127.0.0.1:5894', 'sec-fetch-site': 'same-origin' }],
+    ['localhost', { host: 'localhost:5894' }],
+    ['IPv6 loopback', { host: '[::1]:5894' }],
     ['non-browser client', { host: '127.0.0.1:5894' }],
+    ['request with no Host at all', {}],
   ]
   for (const [label, headers] of sameSite) {
     assert(I.isCrossSiteRequest({ headers }) === false, `放行同源请求（${label}）`)
