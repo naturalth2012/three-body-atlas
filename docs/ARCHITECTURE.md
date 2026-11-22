@@ -40,18 +40,21 @@ L3  适配层      index.js    → engine.js        Host：10 个 Agent 工具 +
 
 ## 二、文件规模
 
-| 文件 | 行数 | 体积 |
+行数一列是**非空行**（数据文件一直是这个口径）。这些数字由 `selfcheck` 的
+「文档数字与实测一致」一节自动比对，改代码后忘了同步会直接失败。
+
+| 文件 | 非空行 | 体积 |
 |---|---:|---:|
-| `client.js` | 2904 | 164.1 KB |
+| `client.js` | 2957 | 167.1 KB |
 | `data/characters.js` | 1326 | 83.9 KB |
 | `engine.js` | 1169 | 50.0 KB |
 | `data/lore.js` | 1167 | 67.6 KB |
 | `sim.js` | 1136 | 51.6 KB |
-| `scripts/selfcheck.mjs` | 845 | 51.9 KB |
+| `scripts/selfcheck.mjs` | 1014 | 62.6 KB |
 | `data/plot.js` | 749 | 50.8 KB |
-| `index.js` | 696 | 32.5 KB |
+| `index.js` | 886 | 40.3 KB |
 | `data/timeline.js` | 601 | 30.5 KB |
-| `scripts/probe.mjs` | 204 | 10.7 KB |
+| `scripts/probe.mjs` | 295 | 15.5 KB |
 | `data/spoiler.js` | 116 | 4.0 KB |
 | `data/works.js` | 106 | 4.1 KB |
 | `data/index.js` | 34 | 1.6 KB |
@@ -71,8 +74,20 @@ L3  适配层      index.js    → engine.js        Host：10 个 Agent 工具 +
 | `ask('水滴是什么')` | 0.37 ms |
 | `simulate({preset:'trisolaris'})` | 22.3 ms |
 | `stabilityScan({samples:60})` | **211–285 ms** |
+| `stabilityScan({samples:240})`（路由允许的上限） | **815 ms** |
 
 除 `stabilityScan` 外全部亚毫秒。`simulate` 一次跑 521 帧、产出 2 次灾变、2 代文明。
+
+### 唯一的重操作：`stabilityScan`
+
+**同步**计算，无 worker、无分片。耗时随 `samples` 线性增长（实测 8 → 46 ms、
+60 → 211 ms、120 → 415 ms、240 → 815 ms）。路由接受 `samples` 到 240，所以最坏情况
+不是 285 ms 而是约 0.8 秒——这段时间整个 GUI 事件循环被占住，并发请求会排队。
+实测：`POST /stability {"samples":240}` 期间发 `GET /bundle`，后者被阻塞 0.766 秒
+（空闲基线 0.0025 秒）。
+
+当前只由 `/stability` 一个显式路由触发（非首屏、非自动轮询），所以日常使用无感；
+但这是**唯一的同步阻塞点**，改动此路由时需留意。
 
 ### `ask()` 是规则引擎，不是模型调用
 
@@ -84,12 +99,6 @@ L3  适配层      index.js    → engine.js        Host：10 个 Agent 工具 +
 - 限制：**只能答已编码进规则的问法**，不是自然语言理解。问法超出规则时走兜底提示。
 
 这是能力边界，也是对外描述时必须诚实的一点。
-
-### 唯一的重操作：`stabilityScan`
-
-211–285 ms **同步**计算，无 worker、无分片。若宿主在同一线程处理 POST，这次调用会
-阻塞整个 GUI 约 0.2 秒。当前只由 `/stability` 一个显式路由触发（非首屏、非自动轮询），
-所以实际影响可控；但这是**唯一的同步阻塞点**，改动此路由时需留意。
 
 ## 四、载荷与传输
 

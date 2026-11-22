@@ -27,6 +27,18 @@ const cases = [
   ['rebind: decimal IP 2130706433', { host: '2130706433' }, true],
   ['rebind: octal IP 0177.0.0.1', { host: '0177.0.0.1' }, true],
 
+  // ---- must be refused: non-loopback literals ----
+  // webServer only refuses a *wildcard* bind, so binding a LAN address is
+  // legitimate; admitting every IP literal would then admit the whole subnet.
+  ['LAN IP 192.168.1.5', { host: '192.168.1.5:7091' }, true],
+  ['routable IP 1.2.3.4', { host: '1.2.3.4:7091' }, true],
+  ['wildcard 0.0.0.0', { host: '0.0.0.0:7091' }, true],
+  ['wildcard [::]', { host: '[::]:7091' }, true],
+  ['link-local [fe80::1]', { host: '[fe80::1]:7091' }, true],
+
+  // ---- must be refused: a missing Host must not switch the Origin check off ----
+  ['no Host, foreign Origin', { origin: 'https://evil.example' }, true],
+
   // ---- must be admitted: the panel's own calls ----
   ['same-origin GET, no Origin', { host: '127.0.0.1:7091' }, false],
   ['same-origin POST', { host: '127.0.0.1:7091', origin: 'http://127.0.0.1:7091' }, false],
@@ -34,10 +46,14 @@ const cases = [
   ['sec-fetch-site: none', { host: '127.0.0.1:7091', 'sec-fetch-site': 'none' }, false],
   ['localhost', { host: 'localhost:7091' }, false],
   ['localhost no port', { host: 'localhost' }, false],
+  ['localhost uppercase', { host: 'LOCALHOST:7091', origin: 'http://localhost:7091' }, false],
+  ['localhost trailing dot', { host: 'localhost.:7091', origin: 'http://localhost:7091' }, false],
   ['IPv4 loopback no port', { host: '127.0.0.1' }, false],
+  ['loopback range 127.5.5.5', { host: '127.5.5.5:7091' }, false],
   ['IPv6 loopback', { host: '[::1]:7091' }, false],
   ['IPv6 loopback no port', { host: '[::1]' }, false],
-  ['LAN IP literal', { host: '192.168.1.5:7091' }, false],
+  ['IPv4-mapped loopback', { host: '[::ffff:127.0.0.1]:7091' }, false],
+  ['default port 80 vs none', { host: '127.0.0.1:80', origin: 'http://127.0.0.1' }, false],
   ['no Host at all', {}, false],
 ]
 

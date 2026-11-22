@@ -451,11 +451,41 @@ const required = [
   'index.js', 'client.js', 'engine.js', 'sim.js', 'cordis.patch.yml', 'icon.svg', 'README.md',
   'data/index.js', 'data/characters.js', 'data/works.js', 'data/timeline.js', 'data/plot.js', 'data/lore.js',
   'locale/zh.json', 'locale/en.json', 'docs/DETAIL.md', 'docs/DETAIL.zh.md', 'docs/preview.svg',
+  // Runtime-adjacent files a packed install still needs: the submission copy the
+  // selfcheck itself reads, and the checks a user runs after installing.
+  'market-entry.yml', 'data/plugins/naturalth2012__three-body-atlas.yml',
+  'scripts/probe-bypass.mjs', 'scripts/verify-guard.mjs',
 ]
 for (const file of required) {
   assert(fs.existsSync(path.join(root, file)), `文件存在：${file}`)
   assert((pkg.files || []).some((pattern) => file === pattern || file.startsWith(pattern.replace(/\/\*.*$/, ''))),
     `files 覆盖：${file}`)
+}
+
+// The list above is hand-kept, so it drifts. Cross-check it against reality: every
+// file this selfcheck itself opens, and every script the package.json exposes,
+// must be covered by `files`. A packed install then passes the same checks the
+// checkout does — measured, not assumed: before this, `npm pack` + install
+// failed the data/plugins assertion because that directory was never listed.
+{
+  const covered = (file) => (pkg.files || []).some(
+    (pattern) => file === pattern || file.startsWith(pattern.replace(/\/\*.*$/, '')))
+  const referenced = new Set()
+  for (const match of fs.readFileSync(fileURLToPath(import.meta.url), 'utf8')
+    .matchAll(/path\.join\(root,\s*'([^']+)'(?:,\s*'([^']+)')?(?:,\s*'([^']+)')?\)/g)) {
+    const parts = [match[1], match[2], match[3]].filter(Boolean)
+    referenced.add(parts.join('/'))
+  }
+  for (const command of Object.values(pkg.scripts || {})) {
+    for (const match of command.matchAll(/scripts\/[\w.-]+/g)) referenced.add(match[0])
+  }
+  // npm always includes these, so listing them would be noise.
+  const alwaysIncluded = new Set(['package.json', 'README.md', 'LICENSE', 'LICENCE'])
+  for (const file of referenced) {
+    if (alwaysIncluded.has(file)) continue
+    if (!fs.existsSync(path.join(root, file))) continue
+    assert(covered(file), `files 自动覆盖：${file}`)
+  }
 }
 
 for (const locale of ['zh', 'en']) {
@@ -1026,6 +1056,17 @@ console.log('\n## 路由跨站防护')
     // what closes it, so this case is the one that must never regress.
     ['DNS rebinding (Host=Origin=domain)', { host: 'evil.example', origin: 'http://evil.example' }],
     ['rebound Host, no Origin', { host: 'evil.example' }],
+    // A missing Host must not switch the Origin check off. The Host rule lets an
+    // absent Host through, so an Origin test written as `host !== '' && ...`
+    // silently admitted this — the defect an independent audit found.
+    ['no Host, foreign Origin', { origin: 'https://evil.example' }],
+    // Only the loopback family is this machine. webServer refuses a wildcard
+    // bind but allows a concrete LAN address, so admitting every IP literal
+    // would have admitted the whole subnet on such a host.
+    ['LAN address 192.168.1.5', { host: '192.168.1.5:5894' }],
+    ['routable 1.2.3.4', { host: '1.2.3.4:5894' }],
+    ['wildcard 0.0.0.0', { host: '0.0.0.0:5894' }],
+    ['wildcard [::]', { host: '[::]:5894' }],
   ]
   for (const [label, headers] of crossSite) {
     assert(I.isCrossSiteRequest({ headers }) === true, `拒绝跨站请求（${label}）`)
@@ -1038,6 +1079,12 @@ console.log('\n## 路由跨站防护')
     ['IPv6 loopback', { host: '[::1]:5894' }],
     ['non-browser client', { host: '127.0.0.1:5894' }],
     ['request with no Host at all', {}],
+    // Cosmetics must not read as a different host: the same machine and session.
+    ['localhost uppercase', { host: 'LOCALHOST:5894', origin: 'http://localhost:5894' }],
+    ['localhost trailing dot', { host: 'localhost.:5894', origin: 'http://localhost:5894' }],
+    ['loopback range 127.5.5.5', { host: '127.5.5.5:5894' }],
+    ['IPv4-mapped loopback', { host: '[::ffff:127.0.0.1]:5894' }],
+    ['default port 80 vs none', { host: '127.0.0.1:80', origin: 'http://127.0.0.1' }],
   ]
   for (const [label, headers] of sameSite) {
     assert(I.isCrossSiteRequest({ headers }) === false, `放行同源请求（${label}）`)
@@ -1045,6 +1092,24 @@ console.log('\n## 路由跨站防护')
   // Guard the guard: the handlers must actually call it.
   const indexSrc = fs.readFileSync(path.join(root, 'index.js'), 'utf8')
   assert((indexSrc.match(/isCrossSiteRequest\(req\)/g) || []).length >= 2, '两个路由 handler 都调用了跨站校验')
+}
+
+console.log('\n## 文档数字与实测一致')
+// Hand-kept figures drift: the file-size table had gone stale for every file
+// that was edited after it was written. Compare the table against measurement.
+{
+  const doc = fs.readFileSync(path.join(root, 'docs', 'ARCHITECTURE.md'), 'utf8')
+  const rows = [...doc.matchAll(/^\| `([^`]+)` \| (\d+) \| ([\d.]+) KB \|$/gm)]
+  assert(rows.length >= 10, `文件规模表有 ${rows.length} 行`)
+  for (const [, file, lines, kb] of rows) {
+    const full = path.join(root, file)
+    if (!fs.existsSync(full)) { fail(`文件规模表提到不存在的文件：${file}`); continue }
+    const source = fs.readFileSync(full, 'utf8')
+    const nonEmpty = source.split('\n').filter((line) => line.trim()).length
+    const actualKb = Number((fs.statSync(full).size / 1024).toFixed(1))
+    assert(nonEmpty === Number(lines), `${file} 非空行数 ${nonEmpty} 与文档 ${lines} 一致`)
+    assert(Math.abs(actualKb - Number(kb)) < 0.15, `${file} 体积 ${actualKb} KB 与文档 ${kb} KB 一致`)
+  }
 }
 
 console.log('\n' + '-'.repeat(52))

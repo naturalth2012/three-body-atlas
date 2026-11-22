@@ -13,7 +13,7 @@
 | `private` 字段 | ✅ 无（否则 npm 会拒绝发布） |
 | LICENSE | ✅ MIT + 著作权与来源说明 |
 | `.gitignore` | ✅ 已就位 |
-| npm 打包预检 | ✅ 29 个文件 / 250 KB，解包后自检仍全过 |
+| npm 打包预检 | ✅ 33 个文件 / 267.5 kB，解包后自检仍全过 |
 | GitHub 仓库 | ✅ 已推送 https://github.com/naturalth2012/three-body-atlas |
 | 市场投稿文件 | ✅ [`data/plugins/naturalth2012__three-body-atlas.yml`](../data/plugins/naturalth2012__three-body-atlas.yml) 已就绪 |
 | npm 登录 | ⬜ 可选，见下 |
@@ -55,7 +55,7 @@ npm publish --registry=https://registry.npmjs.org
 
   ```bash
   node scripts/selfcheck.mjs    # 598 项
-  npm pack --dry-run            # 确认只含预期的 29 个文件
+  npm pack --dry-run            # 确认只含预期的 33 个文件
   ```
 
 - 如果你的 npm 账号名不是 `naturalth2012`，需要同步改 `package.json` 的

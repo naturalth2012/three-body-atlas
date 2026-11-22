@@ -23,7 +23,9 @@
   },
   "scripts": {
     "test": "node scripts/selfcheck.mjs",
-    "probe": "node scripts/probe.mjs"
+    "probe": "node scripts/probe.mjs",
+    "probe:bypass": "node scripts/probe-bypass.mjs",
+    "verify:guard": "node scripts/verify-guard.mjs"
   },
   "exports": {
     ".": "./index.js",
@@ -53,13 +55,16 @@
     "README.md",
     "scripts/selfcheck.mjs",
     "scripts/probe.mjs",
+    "scripts/probe-bypass.mjs",
+    "scripts/verify-guard.mjs",
     "docs/SCHEMA.md",
     "LICENSE",
     ".gitignore",
     "docs/PUBLISHING.md",
     "assets/icon-180.png",
     "docs/PROVENANCE.md",
-    "market-entry.yml"
+    "market-entry.yml",
+    "data/plugins"
   ],
   "dsh": {
     "bundle": {

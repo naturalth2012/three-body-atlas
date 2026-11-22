@@ -135,7 +135,7 @@
 ## 开发
 
 ```bash
-node scripts/selfcheck.mjs   # 数据完整性、引擎行为、剧透分级、模拟、路由与清单（545 项）
+node scripts/selfcheck.mjs   # 数据完整性、引擎行为、剧透分级、模拟、路由与清单（656 项）
 node scripts/probe.mjs       # 无浏览器渲染全部 16 个标签页、四类抽屉与分级遮蔽分支，捕获元素树错误
 ```
 
@@ -152,7 +152,7 @@ node scripts/probe.mjs       # 无浏览器渲染全部 16 个标签页、四类
 | `data/lore.js` | 地点、技术、术语、名句 |
 | `engine.js` | 纯查询与图算法，Host 路由与对话工具共用 |
 | `sim.js` | 引力积分、历法推演、敏感性、稳定性普查、黑暗森林与威慑模型 |
-| `index.js` | Host 半部：21 条同源路由与 8 个 Agent 工具 |
+| `index.js` | Host 半部：24 条同源路由与 10 个 Agent 工具 |
 | `client.js` | Client 半部：React 面板（无 JSX，仅用宿主主题变量） |
 
 ## 使用

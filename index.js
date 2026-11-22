@@ -14,7 +14,7 @@ import {
   characterDetail, placeDetail, techDetail, glossaryDetail,
   buildGraph, neighbors, relationPath,
   timeline, plot, gameLevels, themes, differences,
-  characterJourney, pathGuide, conceptGraph, tierSummary,
+  characterJourney, pathGuide, conceptGraph,
   ask, suggestions,
   SIM_PRESETS, simulate, sensitivity, stabilityScan, darkForest, deterrence,
 } from './engine.js'
@@ -113,6 +113,43 @@ function numberParam(params, key, fallback) {
 const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
 
 /**
+ * Put a `Host`-shaped value into one spelling, so comparing an `Origin`'s host
+ * against the `Host` header does not fail on cosmetics.
+ *
+ * `new URL()` lowercases and drops a default port; the header keeps both. Without
+ * this, `Host: LOCALHOST:7091` + `Origin: http://localhost:7091` was refused, as
+ * was `Host: 127.0.0.1:80` + `Origin: http://127.0.0.1` — the same machine and
+ * the same session.
+ */
+export function normalizeHost(value) {
+  if (typeof value !== 'string') return ''
+  let host = value.trim().toLowerCase()
+  if (host === '') return ''
+  let name = host
+  let port = ''
+  if (name.startsWith('[')) {
+    const close = name.indexOf(']')
+    if (close !== -1) {
+      port = name.slice(close + 1).replace(/^:/, '')
+      name = name.slice(0, close + 1)
+    }
+  } else {
+    const colon = name.lastIndexOf(':')
+    if (colon !== -1) {
+      port = name.slice(colon + 1)
+      name = name.slice(0, colon)
+    }
+  }
+  // Drop a trailing dot after the port is split off, so "localhost.:7091"
+  // reduces like "localhost.:7091" → "localhost:7091". "localhost." and
+  // "localhost" are the same host.
+  if (name.endsWith('.') && !name.endsWith(']')) name = name.slice(0, -1)
+  // A default port and no port are the same authority.
+  if (port === '80' || port === '443' || port === '') port = ''
+  return port === '' ? name : `${name}:${port}`
+}
+
+/**
  * Whether a `Host` header names something that is not this machine.
  *
  * `true` only when a `Host` is present *and* it is neither a loopback name nor
@@ -135,14 +172,23 @@ export function isForeignHostHeader(host) {
     const colon = name.lastIndexOf(':')
     if (colon !== -1) name = name.slice(0, colon)
   }
-  const lower = name.toLowerCase()
+  const lower = name.toLowerCase().replace(/\.$/, '')
   if (LOOPBACK_HOSTNAMES.has(lower)) return false
-  // Any other literal IP still addresses this machine's own listener.
   const bare = lower.startsWith('[') ? lower.slice(1, -1) : lower
+  // Only the loopback family is this machine's own listener. An earlier version
+  // admitted every IP literal, which assumed the GUI always binds loopback —
+  // but webServer only refuses a *wildcard* bind, so a host configured to a LAN
+  // address is legitimate and would then have admitted the whole subnet.
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(bare)) {
-    return !bare.split('.').every((part) => Number(part) <= 255)
+    const parts = bare.split('.').map(Number)
+    if (parts.some((part) => part > 255)) return true
+    return parts[0] !== 127
   }
-  return !(/^[0-9a-f:]+$/.test(bare) && bare.includes(':'))
+  if (bare === '::1') return false
+  // IPv4-mapped loopback: ::ffff:127.0.0.1
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(bare)
+  if (mapped) return !mapped[1].startsWith('127.')
+  return true
 }
 
 export function isCrossSiteRequest(req) {
@@ -153,8 +199,9 @@ export function isCrossSiteRequest(req) {
   const site = headers['sec-fetch-site']
   if (typeof site === 'string' && site !== 'same-origin' && site !== 'none') return true
   const origin = headers.origin
-  // A same-origin GET carries no Origin; an opaque one ("null") is never us.
+  // A same-origin GET carries no Origin.
   if (typeof origin !== 'string' || origin === '') return false
+  // An opaque origin is never us.
   if (origin === 'null') return true
   let originHost
   try {
@@ -162,8 +209,12 @@ export function isCrossSiteRequest(req) {
   } catch {
     return true
   }
+  // A cross-origin Origin is refused even when Host is absent. The Host check
+  // above deliberately lets a missing Host through, so relying on `host` here
+  // would let an absent Host switch the Origin check off entirely.
   const host = headers.host
-  return typeof host === 'string' && host !== '' && originHost !== host
+  if (typeof host !== 'string' || host === '') return true
+  return normalizeHost(originHost) !== normalizeHost(host)
 }
 
 function rejectCrossSite(res) {
@@ -213,21 +264,68 @@ function actionHandler(path, compute) {
         json(res, 405, { error: 'method not allowed' })
         return
       }
+      // A browser always sends JSON here; anything else is not our panel, and
+      // text/plain is exactly the content type that skips a CORS preflight, so
+      // accepting it would widen a CSRF surface for no benefit.
+      const contentType = String(req.headers['content-type'] || '')
+      if (!/^application\/json\b/i.test(contentType)) {
+        json(res, 415, { error: 'expected application/json' })
+        return
+      }
       const chunks = []
       let size = 0
-      await new Promise((resolve, reject) => {
+      let settled = false
+      const outcome = await new Promise((resolve) => {
+        // A client that opens a body and never finishes it would otherwise hold
+        // this handler until Node's 300 s request timeout.
+        const timer = setTimeout(() => {
+          if (settled) return
+          settled = true
+          resolve({ kind: 'timeout' })
+        }, 10_000)
+        const finish = (value) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          resolve(value)
+        }
         req.on('data', (chunk) => {
           size += chunk.length
-          if (size > 512 * 1024) { reject(new Error('request body too large')); req.destroy(); return }
+          if (size > 512 * 1024) {
+            // Answer before tearing the socket down: destroying first threw the
+            // 400 away and the client saw only ECONNRESET.
+            finish({ kind: 'too-large' })
+            req.pause()
+            return
+          }
           chunks.push(chunk)
         })
-        req.on('end', resolve)
-        req.on('error', reject)
+        req.on('end', () => finish({ kind: 'ok' }))
+        req.on('error', (error) => finish({ kind: 'error', error }))
       })
+      if (outcome.kind === 'too-large') {
+        json(res, 413, { error: 'request body too large' })
+        return
+      }
+      if (outcome.kind === 'timeout') {
+        json(res, 408, { error: 'request body timed out' })
+        return
+      }
+      if (outcome.kind === 'error') {
+        json(res, 400, { error: outcome.error instanceof Error ? outcome.error.message : String(outcome.error) })
+        return
+      }
       const raw = Buffer.concat(chunks).toString('utf8').trim()
       let body = {}
       if (raw) {
-        try { body = JSON.parse(raw) } catch { body = {} }
+        try {
+          body = JSON.parse(raw)
+        } catch {
+          // Silently falling back to {} returned a normal result for default
+          // parameters, which reads as success and hides the mistake.
+          json(res, 400, { error: 'body is not valid JSON' })
+          return
+        }
       }
       json(res, 200, await compute(body))
     } catch (error) {
