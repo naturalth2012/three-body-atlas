@@ -1,94 +1,101 @@
-// Check that every route answers 200 for a same-origin caller after the guard.
+// Check that every route computes the right thing, without an HTTP server.
 //
-// The guard is fail-closed, so a mistake in it shows up as a route that no
-// longer answers the panel. This walks all 24 with real parameters.
+// These routes now require an authenticated Peer (the signed browser cookie),
+// and a Node script cannot mint one: the cookie is signed with a per-process
+// secret and the launch token lives in the Host's memory. So this file no
+// longer speaks HTTP. It walks `routeTable()` and calls each `compute` directly,
+// which is what "the route works" actually means — the HTTP layer above it is
+// covered by `verify-auth.mjs`, where a real browser can supply the credential.
 //
-// Run: node scripts/verify-routes.mjs <port>
-import http from 'node:http'
-
-const port = process.argv[2]
-if (!port) {
-  console.error('用法: node scripts/verify-routes.mjs <port>')
-  process.exit(2)
-}
-
-const get = (path) => new Promise((resolve, reject) => {
-  const req = http.request({ host: '127.0.0.1', port: Number(port), path: `/plugins/three-body-atlas${path}`, method: 'GET' }, (res) => {
-    const chunks = []
-    res.on('data', (c) => chunks.push(c))
-    res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf8') }))
-  })
-  req.on('error', reject)
-  req.setTimeout(60_000, () => { req.destroy(new Error('timeout')) })
-  req.end()
-})
-
-const post = (path, payload) => new Promise((resolve, reject) => {
-  const body = JSON.stringify(payload)
-  const req = http.request({
-    host: '127.0.0.1', port: Number(port), path: `/plugins/three-body-atlas${path}`, method: 'POST',
-    headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) },
-  }, (res) => {
-    const chunks = []
-    res.on('data', (c) => chunks.push(c))
-    res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf8') }))
-  })
-  req.on('error', reject)
-  req.setTimeout(120_000, () => { req.destroy(new Error('timeout')) })
-  req.write(body)
-  req.end()
-})
+// Run: node scripts/verify-routes.mjs
+import { routeTable } from '../index.js'
 
 const q = encodeURIComponent
-const routes = [
-  ['GET', `/bundle`, undefined],
-  ['GET', `/search?q=${q('罗辑')}`, undefined],
-  ['GET', `/search-all?q=${q('水滴')}`, undefined],
-  ['GET', `/detail?id=luo-ji`, undefined],
-  ['GET', `/place?id=${q('末日战役')}`, undefined],
-  ['GET', `/tech?id=${q('水滴')}`, undefined],
-  ['GET', `/glossary?id=${q('黑暗森林')}`, undefined],
-  ['GET', `/graph`, undefined],
-  ['GET', `/neighbors?id=luo-ji`, undefined],
-  ['GET', `/path?from=${q('罗辑')}&to=${q('程心')}`, undefined],
-  ['GET', `/timeline`, undefined],
-  ['GET', `/plot`, undefined],
-  ['GET', `/themes`, undefined],
-  ['GET', `/game`, undefined],
-  ['GET', `/differences`, undefined],
-  ['GET', `/ask?q=${q('罗辑是谁')}`, undefined],
-  ['GET', `/journey?id=luo-ji`, undefined],
-  ['GET', `/guide`, undefined],
-  ['GET', `/concept?id=${q('黑暗森林')}`, undefined],
-  ['POST', `/simulate`, { preset: 'trisolaris' }],
-  ['POST', `/sensitivity`, {}],
-  ['POST', `/stability`, { samples: 8 }],
-  // Batched by design: one small batch is enough to prove the route is wired.
-  ['POST', `/census`, { samples: 8, offset: 0, limit: 4, steps: 4000 }],
-  ['POST', `/dark-forest`, {}],
-  ['POST', `/deterrence`, {}],
-]
+const params = (query) => new URLSearchParams(query)
 
+// One representative request per route, with the parameters a reader would use.
+const REQUESTS = {
+  '/plugins/three-body-atlas/bundle': () => params(''),
+  '/plugins/three-body-atlas/search': () => params(`q=${q('罗辑')}`),
+  '/plugins/three-body-atlas/search-all': () => params(`q=${q('水滴')}`),
+  '/plugins/three-body-atlas/detail': () => params('id=luo-ji'),
+  '/plugins/three-body-atlas/place': () => params(`id=${q('末日战役')}`),
+  '/plugins/three-body-atlas/tech': () => params(`id=${q('水滴')}`),
+  '/plugins/three-body-atlas/glossary': () => params(`id=${q('黑暗森林')}`),
+  '/plugins/three-body-atlas/graph': () => params(''),
+  '/plugins/three-body-atlas/neighbors': () => params('id=luo-ji'),
+  '/plugins/three-body-atlas/path': () => params(`from=${q('罗辑')}&to=${q('程心')}`),
+  '/plugins/three-body-atlas/timeline': () => params(''),
+  '/plugins/three-body-atlas/plot': () => params(''),
+  '/plugins/three-body-atlas/themes': () => params(''),
+  '/plugins/three-body-atlas/game': () => params(''),
+  '/plugins/three-body-atlas/differences': () => params(''),
+  '/plugins/three-body-atlas/ask': () => params(`q=${q('罗辑是谁')}`),
+  '/plugins/three-body-atlas/journey': () => params('id=luo-ji'),
+  '/plugins/three-body-atlas/guide': () => params(''),
+  '/plugins/three-body-atlas/concept': () => params(`id=${q('黑暗森林')}`),
+}
+
+// Bodies for the six action routes; small, so the run stays quick.
+const BODIES = {
+  '/plugins/three-body-atlas/simulate': { preset: 'trisolaris' },
+  '/plugins/three-body-atlas/sensitivity': {},
+  '/plugins/three-body-atlas/stability': { samples: 8 },
+  // Batched by design: one small batch proves the route is wired.
+  '/plugins/three-body-atlas/census': { samples: 8, offset: 0, limit: 4, steps: 4000 },
+  '/plugins/three-body-atlas/dark-forest': {},
+  '/plugins/three-body-atlas/deterrence': {},
+}
+
+const table = routeTable()
 let failures = 0
-for (const [method, path, payload] of routes) {
-  const label = `${method.padEnd(4)} ${path}`
+
+for (const route of table) {
+  const label = `${route.kind === 'get' ? 'GET' : 'POST'} ${route.path.replace('/plugins/three-body-atlas', '')}`
   try {
-    const r = method === 'GET' ? await get(path) : await post(path, payload)
-    const ok = r.status === 200
-    let note = ''
+    let result
+    if (route.kind === 'get') {
+      const make = REQUESTS[route.path]
+      if (make === undefined) {
+        failures++
+        console.log(`  FAIL  ${label.padEnd(46)} → 测试里没有为这条路由准备参数`)
+        continue
+      }
+      result = await route.compute(make())
+    } else {
+      if (!(route.path in BODIES)) {
+        failures++
+        console.log(`  FAIL  ${label.padEnd(46)} → 测试里没有为这条路由准备请求体`)
+        continue
+      }
+      result = await route.compute(BODIES[route.path])
+    }
+    // A route that returns undefined is a route that renders an empty panel.
+    const ok = result !== undefined && result !== null
     if (!ok) {
       failures++
-      note = '  ' + (r.body || '').slice(0, 100)
-    } else if (!/^\s*[[{]/.test(r.body)) {
-      failures++
-      note = '  响应不是 JSON'
+      console.log(`  FAIL  ${label.padEnd(46)} → 计算结果为空`)
+      continue
     }
-    console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${label.padEnd(46)} → ${r.status}${note}`)
+    const size = JSON.stringify(result).length
+    console.log(`  PASS  ${label.padEnd(46)} → ${String(size).padStart(7)} 字节`)
   } catch (error) {
     failures++
     console.log(`  FAIL  ${label.padEnd(46)} → ${error.message}`)
   }
 }
 
-console.log(failures ? `\n  ${failures}/${routes.length} 失败` : `\n  全部 ${routes.length} 条路由正常`)
+// The table must stay in sync with what the tests know about: a route added
+// without a request here would otherwise pass silently by never running.
+const covered = new Set([...Object.keys(REQUESTS), ...Object.keys(BODIES)])
+for (const path of covered) {
+  if (!table.some((r) => r.path === path)) {
+    failures++
+    console.log(`  FAIL  ${path} → 测试覆盖了它，但路由表里没有`)
+  }
+}
+
+console.log(failures
+  ? `\n  ${failures}/${table.length} 失败`
+  : `\n  全部 ${table.length} 条路由计算正常`)
 process.exit(failures ? 1 : 0)

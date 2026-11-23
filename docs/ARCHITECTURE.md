@@ -45,13 +45,13 @@ L3  适配层      index.js    → engine.js        Host：11 个 Agent 工具 +
 
 | 文件 | 非空行 | 体积 |
 |---|---:|---:|
-| `client.js` | 3129 | 176.2 KB |
+| `client.js` | 3136 | 176.7 KB |
 | `sim.js` | 1780 | 83.7 KB |
 | `data/characters.js` | 1326 | 83.9 KB |
 | `engine.js` | 1169 | 50.1 KB |
 | `data/lore.js` | 1167 | 67.6 KB |
-| `scripts/selfcheck.mjs` | 1350 | 81.5 KB |
-| `index.js` | 985 | 45.0 KB |
+| `scripts/selfcheck.mjs` | 1428 | 86.3 KB |
+| `index.js` | 1062 | 48.3 KB |
 | `data/plot.js` | 749 | 50.8 KB |
 | `data/timeline.js` | 601 | 30.5 KB |
 | `scripts/probe.mjs` | 295 | 15.5 KB |
@@ -209,15 +209,16 @@ HTTP 路由合计  25 条   与 25 个 *_PATH 常量一一对应
 
 ## 七、已知边界与风险
 
-### 路由的跨站防护
+### 路由的访问检查
 
 `webServer.register` 把原始 `IncomingMessage` 直接交给 handler，**不检查 cookie、Host 或 Origin**
 （其 `readResource` 注释原文："This method checks no cookie, Host, or Origin"）。
 `dsh web` 的 401 准入检查在 SPA fallback 里，而**命名路由的匹配优先于 fallback**，
-所以本插件的 25 条路由绕过了那道准入——任何浏览器里打开的网页都能调用它们。
-插件市场条目曾如实披露这一点。
+所以本插件的 25 条路由绕过了那道准入。
 
-现在的实现（`index.js` 的 `isCrossSiteRequest`）拒绝两类请求：
+现在分两层，缺一不可：
+
+**第一层：`isCrossSiteRequest`——判断调用方是否"自称跨站"**
 
 1. **明确标识为跨站的**：`sec-fetch-site` 为 `cross-site`/`same-site`、`Origin` 是异源或 `null`；
 2. **`Host` 是普通域名的**——这一条才是关键。只比较 `Origin` 与 `Host` 是不够的：
@@ -225,16 +226,39 @@ HTTP 路由合计  25 条   与 25 个 *_PATH 常量一一对应
    `evil.example`，同源比较会放行。而 `webServer` 只接受 IP 字面量且拒绝通配绑定，
    所以合法请求的 `Host` 必然是回环名或 IP 字面量。
 
-**这不是认证，代码里也没这么声称。** 它放行面板自身的同源调用，也不干扰不发这些头的
-非浏览器客户端。判定只接受标准 IP 字面量：`0x7f000001`、`2130706433`、`0177.0.0.1`
-这类非标准写法虽指向本机，仍会被拒——**宁可误拒，不放行无法确认来源的请求**。
-缺少 `Host` 头的请求放行（HTTP/1.1 必带 `Host`，缺失说明是本机客户端或测试替身，
-而 rebinding 请求一定带自己的域名）。
+判定只接受标准 IP 字面量：`0x7f000001`、`2130706433`、`0177.0.0.1` 这类非标准写法
+虽指向本机，仍会被拒——**宁可误拒，不放行无法确认来源的请求**。
 
-覆盖范围：25 条路由全部经过校验，POST 在读取 body **之前**就拒绝。
+**第二层：`rejectUnauthenticated`——要求一个活的、已认证的 Peer**
 
-复现：`node scripts/probe-bypass.mjs`（24 项对抗用例）、
-`node scripts/verify-guard.mjs <port>`（对运行中的 Host 做端到端验证）。
+第一层只看调用方的"自称"，对**完全不带浏览器头部的本地进程毫无作用**。实测（改动前）：
+
+| 请求 | 结果 |
+|---|---|
+| 带 `Origin: https://evil.example` | 403 |
+| 带 `Sec-Fetch-Site: cross-site` | 403 |
+| **不带任何浏览器头部** | **200，返回全量数据** |
+
+也就是说，任何本地程序、任何 `curl` 都能读到全部数据。第二层补的正是这一点：
+`ctx.connection.requestRejection(req)` 返回 `undefined` 才放行，否则按其给出的
+401/403 拒绝。它内部做两件事——Host/Origin 信任判断，**以及**浏览器签名 cookie
+或 API 凭据的认证。这与 DSH 自己的路由是同一个要求（实测 DSH 的 `GET /` 与
+`POST /api` 无 cookie 均返回 401）。
+
+面板不受影响：认证 cookie 的属性是 `Path=/ ; HttpOnly ; SameSite=Strict`，
+覆盖整个源，而面板与路由同源，`fetch` 自动携带。`client.js` 里显式写了
+`credentials: 'same-origin'`，因为改成 `omit` 会让每个请求都 401，而失败表现是
+**空面板**而不是错误——那种 bug 很难追回到这一行。
+
+`connection` 服务缺失时（非常规组合）退回第一层，而不是拒绝所有请求；
+`requestRejection` 抛异常时同样不影响路由。
+
+覆盖范围：25 条路由全部经过两层检查，POST 在读取 body **之前**就拒绝
+（否则未认证调用方仍能让 Host 缓冲一个 payload）。
+
+复现：`node scripts/probe-bypass.mjs`（24 项跨站对抗用例）、
+`node scripts/verify-auth.mjs`（对运行中的 Host 验证 401/403）、
+`node scripts/verify-routes.mjs`（25 条路由的计算，不需要端口或凭据）。
 
 ### 架构层面
 
@@ -275,9 +299,13 @@ HTTP 路由合计  25 条   与 25 个 *_PATH 常量一一对应
 cd three-body-atlas
 
 # 数据完整性与渲染（可直接跑）
-node scripts/selfcheck.mjs   # 814 项断言，含引用完整性、分级单调性与跨站防护
-node scripts/probe.mjs       # 108 次渲染，0 错误
+node scripts/selfcheck.mjs    # 837 项断言，含引用完整性、分级单调性与路由访问检查
+node scripts/probe.mjs        # 108 次渲染，0 错误
+node scripts/verify-routes.mjs # 25 条路由的计算，不需要端口或凭据
 node scripts/probe-bypass.mjs # 24 项跨站对抗用例
+
+# 需要运行中的 Host：验证未认证请求确实被拒
+node scripts/verify-auth.mjs
 
 # 需要联网：核对市场里发布的条目是否仍与仓库一致
 node scripts/check-market.mjs
@@ -286,13 +314,22 @@ node scripts/check-market.mjs
 ### 为什么要有 `check-market.mjs`
 
 市场条目不是我们单方面写的。维护者会跑批量自动化，一次改几十个条目——
-2026-11-23 的 `9190e56` 一次动了 28 个，把我们这一条的「路由没有访问检查」
-又加了回去，而那句话在跨站防护上线后就不成立了，同一段描述里于是同时出现
-「拒绝跨站调用」和「网页可以调用它们」两个相反的说法。
+2026-11-23 的 `9190e56` 一次动了 28 个。
 
 本地测试看不见这种漂移，因为它只读本地文件。这个脚本把发布的条目拉下来逐字
 比对，并把「自相矛盾」当作独立的一类失败单独报告——那种错误 YAML 校验、
 lint、打包检查全都发现不了，只有人去读才会发现。
+
+### 关于「路由没有访问检查」那句话
+
+维护者在合并 #17807 后把这句话写回描述，条件是「加上 `requestRejection`
+再开 PR 删掉」。当时我判断这句话是自动化误伤——**那个判断是错的**。
+
+实测证明维护者是对的：改动前，不带任何浏览器头部的请求能从 `/bundle`、
+`/simulate`、`/census` 拿到 200 和全量数据。跨站防护只挡住"自称跨站"的调用方，
+对本地进程毫无作用。加上 `requestRejection` 之后，同一请求返回 401，
+与 DSH 自己的路由一致。这件事的教训写在 `docs/PLAN-AUTH.md`：**描述与代码
+哪个对，要先测，不要先信自己的实现**。
 
 **性能数字的测法**：目标函数预热 3 次，再取 20 次 `performance.now()` 均值。
 示例：

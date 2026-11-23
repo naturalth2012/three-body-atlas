@@ -1019,13 +1019,17 @@ assert(fs.existsSync(archPath), '有架构与执行细节文档')
 if (fs.existsSync(archPath)) {
   const arch = fs.readFileSync(archPath, 'utf8')
   const indexSrc = fs.readFileSync(path.join(root, 'index.js'), 'utf8')
-  const webStart = indexSrc.indexOf('ctx.inject([\'webServer\']')
+  // Routes live in `routeTable()` now, so count them from there rather than
+  // from the registration calls: the table is the single source of truth and
+  // `verify-routes.mjs` walks the same one.
+  const webStart = indexSrc.indexOf('ctx.inject([\'webServer\', \'connection\']')
   const toolsBlock = indexSrc.slice(0, webStart)
-  const webBlock = indexSrc.slice(webStart)
   const nTools = (toolsBlock.match(/^\s*register\(\{/gm) || []).length
-  const nGet = (webBlock.match(/^\s*register\([A-Z_]+_PATH/gm) || []).length
-  const nPost = (webBlock.match(/^\s*registerAction\([A-Z_]+_PATH/gm) || []).length
+  const nGet = (indexSrc.match(/\{ kind: 'get', path: [A-Z_]+_PATH/g) || []).length
+  const nPost = (indexSrc.match(/\{ kind: 'action', path: [A-Z_]+_PATH/g) || []).length
   assert(nTools === 11, `index.js 注册了 ${nTools} 个 Agent 工具`)
+  assert(nGet === 19, `routeTable 里 ${nGet} 条 GET 路由`)
+  assert(nPost === 6, `routeTable 里 ${nPost} 条 POST 路由`)
   assert(arch.includes(`${nTools} 个 Agent 工具`), `架构文档的工具数与代码一致（${nTools}）`)
   assert(arch.includes(`${nGet} 条 GET 路由`), `架构文档的 GET 路由数与代码一致（${nGet}）`)
   assert(arch.includes(`${nPost} 条 POST 路由`), `架构文档的 POST 路由数与代码一致（${nPost}）`)
@@ -1098,11 +1102,19 @@ if (fs.existsSync(entryPath) && fs.existsSync(submitPath)) {
     for (const [label, claimed, actual] of claims) {
       assert(claimed === actual, `投稿描述称 ${claimed} ${label}，代码里是 ${actual}`)
     }
-    // The entry must state the two facts a reader could otherwise be misled by.
-    assert(/cross-site/.test(descEn) && /跨站/.test(descZh),
-      '投稿描述写明路由拒绝跨站调用')
+    // The entry must state the access facts a reader could otherwise be misled by.
+    // "Rejects cross-site callers" alone was not enough: it was true and still
+    // let a headerless local process read everything, so the claim now names the
+    // actual mechanism.
+    assert(/requestRejection/.test(descEn) && /requestRejection/.test(descZh),
+      '投稿描述写明路由复用 DSH 的访问检查')
+    assert(/unauthenticated|未认证/.test(descEn + descZh),
+      '投稿描述写明未认证调用方被拒')
     assert(!/no DSH access check|没有 DSH 的访问检查/.test(entry),
       '投稿描述不再声称路由没有访问检查（该说法已过时）')
+    // The mechanism named in the prose must be the one in the code.
+    assert(/ctx\.inject\(\['webServer', 'connection'\]/.test(hostSrc),
+      '描述里说的 requestRejection 在代码里确实接上了')
     assert(/bilingual|双语/.test(descEn + descZh), '投稿描述写明双语支持')
     assert(/archive text|图鉴正文/.test(descEn + descZh), '投稿描述写明图鉴正文为中文')
   }
@@ -1208,10 +1220,11 @@ console.log('\n## 模拟舞台 hooks 顺序')
 }
 
 console.log('\n## 路由跨站防护')
-// The market entry discloses that these routes answer any page the browser
-// loads: webServer admits every request, and the dsh web check sits in the SPA
-// fallback, which a named route matches before. Assert the guard exists, that it
-// rejects a positively cross-site caller, and that it still admits the panel.
+// `isCrossSiteRequest` is the *claim* check: does the caller identify as another
+// site? It is deliberately not the access check. A headerless local process
+// passes it, and that is fine because `rejectUnauthenticated` runs next and
+// requires a live authenticated Peer. Both layers are asserted here, and the
+// second one is what makes the market entry's access sentence true.
 {
   const I = await import(new URL('../index.js', import.meta.url).href)
   assert(typeof I.isCrossSiteRequest === 'function', 'index.js 导出 isCrossSiteRequest')
@@ -1245,6 +1258,9 @@ console.log('\n## 路由跨站防护')
     ['sec-fetch-site: same-origin', { host: '127.0.0.1:5894', 'sec-fetch-site': 'same-origin' }],
     ['localhost', { host: 'localhost:5894' }],
     ['IPv6 loopback', { host: '[::1]:5894' }],
+    // Passes the *claim* check on purpose. `rejectUnauthenticated` is the layer
+    // that refuses it, so this line documents the division of labour rather
+    // than an access decision.
     ['non-browser client', { host: '127.0.0.1:5894' }],
     ['request with no Host at all', {}],
     // Cosmetics must not read as a different host: the same machine and session.
@@ -1260,6 +1276,77 @@ console.log('\n## 路由跨站防护')
   // Guard the guard: the handlers must actually call it.
   const indexSrc = fs.readFileSync(path.join(root, 'index.js'), 'utf8')
   assert((indexSrc.match(/isCrossSiteRequest\(req\)/g) || []).length >= 2, '两个路由 handler 都调用了跨站校验')
+}
+
+console.log('\n## 路由访问检查（requestRejection）')
+// The market entry says these routes hold DSH's own access bar. That sentence is
+// only true if the routes call `ctx.connection.requestRejection`; a cross-site
+// fence alone lets a headerless local process read everything. Assert the wiring
+// and the behaviour, so the sentence cannot drift from the code again.
+{
+  const I = await import(new URL('../index.js', import.meta.url).href)
+  const indexSrc = fs.readFileSync(path.join(root, 'index.js'), 'utf8')
+
+  assert(/ctx\.inject\(\['webServer', 'connection'\]/.test(indexSrc),
+    '路由注入 connection 服务（与 DSH 自己的路由同一访问检查）')
+  assert(/function rejectUnauthenticated\(ctx, req, res\)/.test(indexSrc),
+    '存在统一的认证拒绝函数')
+  assert((indexSrc.match(/rejectUnauthenticated\(ctx, req, res\)/g) || []).length >= 2,
+    '两个路由 handler 都调用了认证检查')
+  // The check must run before the POST body is read, or an unauthenticated
+  // caller can still make the Host buffer a payload.
+  const actionStart = indexSrc.indexOf('function actionHandler(')
+  const actionEnd = indexSrc.indexOf('\n}\n', actionStart)
+  const actionBody = indexSrc.slice(actionStart, actionEnd)
+  const authAt = actionBody.indexOf('rejectUnauthenticated')
+  const bodyAt = actionBody.indexOf("req.on('data'")
+  assert(authAt !== -1 && (bodyAt === -1 || authAt < bodyAt),
+    '认证检查在读取 POST 请求体之前')
+
+  // Behaviour: a stub connection lets us drive the real handler without a Host.
+  const makeRes = () => {
+    const res = { statusCode: 0, headers: {}, body: '', ended: false }
+    res.writeHead = (status, headers) => { res.statusCode = status; Object.assign(res.headers, headers || {}) }
+    res.end = (payload) => { res.ended = true; if (typeof payload === 'string') res.body = payload }
+    res.setHeader = (k, v) => { res.headers[k] = v }
+    return res
+  }
+
+  // No connection service at all: keep the cross-site fence, do not refuse all.
+  {
+    const res = makeRes()
+    const req = { headers: { host: '127.0.0.1:5894' }, method: 'GET', url: '/x' }
+    assert(I.__test__.rejectUnauthenticated({}, req, res) === false,
+      '没有 connection 服务时放行（退回跨站校验）')
+    assert(res.ended === false, '没有 connection 服务时不写响应')
+  }
+  // A connection that rejects must produce that status and stop the handler.
+  for (const status of [401, 403]) {
+    const res = makeRes()
+    const req = { headers: { host: '127.0.0.1:5894' }, method: 'GET', url: '/x' }
+    const ctx = { connection: { requestRejection: () => status } }
+    assert(I.__test__.rejectUnauthenticated(ctx, req, res) === true,
+      `requestRejection 返回 ${status} 时拒绝`)
+    assert(res.statusCode === status, `拒绝时状态码为 ${status}`)
+    assert(/error/.test(res.body), `拒绝时返回 JSON 错误体（${status}）`)
+  }
+  // A connection that admits must let the handler continue.
+  {
+    const res = makeRes()
+    const req = { headers: { host: '127.0.0.1:5894' }, method: 'GET', url: '/x' }
+    const ctx = { connection: { requestRejection: () => undefined } }
+    assert(I.__test__.rejectUnauthenticated(ctx, req, res) === false,
+      'requestRejection 放行时不写响应')
+    assert(res.ended === false, '放行时 handler 继续执行')
+  }
+  // A throwing connection must not take the route down with it.
+  {
+    const res = makeRes()
+    const req = { headers: { host: '127.0.0.1:5894' }, method: 'GET', url: '/x' }
+    const ctx = { connection: { requestRejection: () => { throw new Error('boom') } } }
+    assert(I.__test__.rejectUnauthenticated(ctx, req, res) === false,
+      'connection 抛异常时不影响路由')
+  }
 }
 
 console.log('\n## 双语政策')
@@ -1409,21 +1496,16 @@ console.log('\n## 双语政策')
     }
   }
 
-  // Match the registerAction calls, not the `const *_PATH = ...` declarations.
+  // The action routes live in `routeTable()` now, so match the table entry and
+  // check its `compute` carries the language through to the engine.
   for (const route of ['SIM_PATH', 'SENS_PATH', 'SCAN_PATH', 'CENSUS_PATH', 'FOREST_PATH', 'DETERRENCE_PATH']) {
-    const call = host.indexOf(`registerAction(${route},`)
-    assert(call > 0, `index.js 注册了 ${route}`)
-    // Walk to the matching close paren of the registerAction call.
-    let depth = 0
-    let end = call
-    for (let i = host.indexOf('(', call); i < host.length; i++) {
-      if (host[i] === '(') depth++
-      else if (host[i] === ')') {
-        depth--
-        if (depth === 0) { end = i; break }
-      }
-    }
-    const body = host.slice(call, end + 1)
+    const entry = host.indexOf(`path: ${route},`)
+    assert(entry > 0, `index.js 的 routeTable 里有 ${route}`)
+    // Walk forward to the next table entry, which bounds this one's compute.
+    const next = host.indexOf("{ kind: '", entry + 1)
+    const body = host.slice(entry, next === -1 ? undefined : next)
+    assert(/kind: 'action'/.test(host.slice(host.lastIndexOf("{ kind: '", entry), entry)),
+      `${route} 是 action 路由`)
     assert(/langOf\(body\)/.test(body), `${route} 把 lang 传给引擎`)
   }
 

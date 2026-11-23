@@ -233,12 +233,64 @@ function rejectCrossSite(res) {
   json(res, 403, { error: 'cross-site request rejected' })
 }
 
-function routeHandler(path, compute) {
+/**
+ * The trust surface borrowed from DSH; its full type lives in a browser-side
+ * package, so the shape is declared here rather than imported.
+ */
+function connectionOf(ctx) {
+  try {
+    return Reflect.get(ctx, 'connection')
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Refuse a request DSH itself would refuse.
+ *
+ * `isCrossSiteRequest` only decides whether the caller *claims* to be another
+ * site. It says nothing about a process that sends no browser headers at all:
+ * that one is admitted, and reads the whole dataset. `requestRejection` adds
+ * what the claim lacks — the request must carry a live, authenticated Peer
+ * (the signed browser cookie, or an API credential), which is the same bar
+ * DSH's own routes hold.
+ *
+ * Returns true when the response has been written.
+ */
+function rejectUnauthenticated(ctx, req, res) {
+  const connection = connectionOf(ctx)
+  if (connection === undefined || typeof connection.requestRejection !== 'function') {
+    // No connection service in this composition: keep the cross-site fence
+    // rather than refusing every request.
+    return false
+  }
+  let rejection
+  try {
+    rejection = connection.requestRejection(req)
+  } catch {
+    return false
+  }
+  if (rejection === undefined) return false
+  json(res, rejection, {
+    error: rejection === 401 ? 'authentication required' : 'cross-site request rejected',
+  })
+  return true
+}
+
+/**
+ * Test seam. The access check needs a live Host to exercise over HTTP, so the
+ * self-check drives it directly with a stub connection instead of pretending a
+ * Node script can mint the browser credential.
+ */
+export const __test__ = { rejectUnauthenticated, connectionOf }
+
+function routeHandler(ctx, path, compute) {
   return async (req, res) => {
     if (isCrossSiteRequest(req)) {
       rejectCrossSite(res)
       return
     }
+    if (rejectUnauthenticated(ctx, req, res)) return
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       json(res, 405, { error: 'method not allowed' })
       return
@@ -259,7 +311,7 @@ function routeHandler(path, compute) {
 }
 
 /** POST endpoints read a JSON body; used by the simulation controls. */
-function actionHandler(path, compute) {
+function actionHandler(ctx, path, compute) {
   return async (req, res) => {
     // Checked before the body is read, so a cross-site page cannot even make us
     // buffer its payload.
@@ -267,6 +319,9 @@ function actionHandler(path, compute) {
       rejectCrossSite(res)
       return
     }
+    // Also before the body: an unauthenticated caller must not be able to make
+    // us buffer anything either.
+    if (rejectUnauthenticated(ctx, req, res)) return
     try {
       if (req.method === 'GET') {
         json(res, 200, await compute(readQuery(req, path)))
@@ -868,15 +923,36 @@ export function apply(ctx) {
   })
 
   // ---- Browser routes ----------------------------------------------------
-  ctx.inject(['webServer'], (webCtx) => {
-    const register = (path, compute, label) =>
-      webCtx.effect(() => webCtx.webServer.register({ kind: 'exact', path, handler: routeHandler(path, compute) }), label)
-    const registerAction = (path, compute, label) =>
-      webCtx.effect(() => webCtx.webServer.register({ kind: 'exact', path, handler: actionHandler(path, compute) }), label)
+  // `connection` is what makes these routes hold the same access bar as DSH's
+  // own: without it a headerless local process reads the whole dataset.
+  ctx.inject(['webServer', 'connection'], (webCtx) => {
+    for (const route of routeTable()) {
+      const handler = route.kind === 'get' ? routeHandler : actionHandler
+      webCtx.effect(() => webCtx.webServer.register({
+        kind: 'exact',
+        path: route.path,
+        handler: handler(webCtx, route.path, route.compute),
+      }), route.label)
+    }
+  })
+}
 
-    register(BUNDLE_PATH, () => bundle(), 'three-body-atlas: bundle route')
+/**
+ * The route table, kept separate from HTTP registration.
+ *
+ * Registering a route needs a Context; computing a response does not. Splitting
+ * them lets `verify-routes.mjs` check all 25 computations without a server, a
+ * port, or a browser credential — which matters because the routes now require
+ * an authenticated Peer that a Node script cannot mint.
+ *
+ * `kind` is 'get' for read-only routes (GET/HEAD) and 'action' for the ones that
+ * also take a JSON body.
+ */
+export function routeTable() {
+  return [
+    { kind: 'get', path: BUNDLE_PATH, label: 'three-body-atlas: bundle route', compute: () => bundle() },
 
-    register(SEARCH_PATH, (p) => ({
+    { kind: 'get', path: SEARCH_PATH, label: 'three-body-atlas: search route', compute: (p) => ({
       results: searchCharacters(p.get('q') || '', {
         faction: p.get('faction') || undefined,
         work: p.get('work') || undefined,
@@ -884,71 +960,71 @@ export function apply(ctx) {
         canon: p.get('canon') || undefined,
       }),
       counts: counts(),
-    }), 'three-body-atlas: search route')
+    }) },
 
-    register(ALL_PATH, (p) => searchAll(p.get('q') || ''), 'three-body-atlas: universal search route')
+    { kind: 'get', path: ALL_PATH, label: 'three-body-atlas: universal search route', compute: (p) => searchAll(p.get('q') || '') },
 
-    register(DETAIL_PATH, (p) => characterDetail(p.get('id') || p.get('q') || '', {
+    { kind: 'get', path: DETAIL_PATH, label: 'three-body-atlas: detail route', compute: (p) => characterDetail(p.get('id') || p.get('q') || '', {
       maxTier: p.get('maxTier'),
-    }) || { error: '没有找到该角色' }, 'three-body-atlas: detail route')
+    }) || { error: '没有找到该角色' } },
 
-    register(PLACE_PATH, (p) => placeDetail(p.get('id') || p.get('q') || '', {
+    { kind: 'get', path: PLACE_PATH, label: 'three-body-atlas: place route', compute: (p) => placeDetail(p.get('id') || p.get('q') || '', {
       maxTier: p.get('maxTier'),
-    }) || { error: '没有找到该地点' }, 'three-body-atlas: place route')
+    }) || { error: '没有找到该地点' } },
 
-    register(TECH_PATH, (p) => techDetail(p.get('id') || p.get('q') || '', {
+    { kind: 'get', path: TECH_PATH, label: 'three-body-atlas: tech route', compute: (p) => techDetail(p.get('id') || p.get('q') || '', {
       maxTier: p.get('maxTier'),
-    }) || { error: '没有找到该技术' }, 'three-body-atlas: tech route')
+    }) || { error: '没有找到该技术' } },
 
-    register(GLOSSARY_PATH, (p) => glossaryDetail(p.get('id') || p.get('q') || '', {
+    { kind: 'get', path: GLOSSARY_PATH, label: 'three-body-atlas: glossary route', compute: (p) => glossaryDetail(p.get('id') || p.get('q') || '', {
       maxTier: p.get('maxTier'),
-    }) || { error: '没有找到该术语' }, 'three-body-atlas: glossary route')
+    }) || { error: '没有找到该术语' } },
 
-    register(JOURNEY_PATH, (p) => characterJourney(p.get('id') || p.get('q') || '', {
+    { kind: 'get', path: JOURNEY_PATH, label: 'three-body-atlas: journey route', compute: (p) => characterJourney(p.get('id') || p.get('q') || '', {
       maxTier: p.get('maxTier'),
-    }) || { error: '没有找到该角色' }, 'three-body-atlas: journey route')
+    }) || { error: '没有找到该角色' } },
 
-    register(GUIDE_PATH, (p) => ({ paths: pathGuide({ maxTier: p.get('maxTier') }) }),
-      'three-body-atlas: reading guide route')
+    { kind: 'get', path: GUIDE_PATH, label: 'three-body-atlas: reading guide route',
+      compute: (p) => ({ paths: pathGuide({ maxTier: p.get('maxTier') }) }) },
 
-    register(CONCEPT_PATH, (p) => conceptGraph({
+    { kind: 'get', path: CONCEPT_PATH, label: 'three-body-atlas: concept graph route', compute: (p) => conceptGraph({
       id: p.get('id') || p.get('q') || '',
       depth: p.get('depth'),
       maxTier: p.get('maxTier'),
-    }) || { error: '没有找到该概念' }, 'three-body-atlas: concept graph route')
+    }) || { error: '没有找到该概念' } },
 
-    register(GRAPH_PATH, (p) => buildGraph({ faction: p.get('faction') || undefined }),
-      'three-body-atlas: graph route')
+    { kind: 'get', path: GRAPH_PATH, label: 'three-body-atlas: graph route',
+      compute: (p) => buildGraph({ faction: p.get('faction') || undefined }) },
 
-    register(NEIGHBORS_PATH, (p) => neighbors(p.get('id') || p.get('q') || '')
-      || { error: '没有找到该角色' }, 'three-body-atlas: neighbors route')
+    { kind: 'get', path: NEIGHBORS_PATH, label: 'three-body-atlas: neighbors route',
+      compute: (p) => neighbors(p.get('id') || p.get('q') || '') || { error: '没有找到该角色' } },
 
-    register(PATH_PATH, (p) => relationPath(p.get('from') || '', p.get('to') || ''),
-      'three-body-atlas: relation path route')
+    { kind: 'get', path: PATH_PATH, label: 'three-body-atlas: relation path route',
+      compute: (p) => relationPath(p.get('from') || '', p.get('to') || '') },
 
-    register(TIMELINE_PATH, (p) => timeline({
+    { kind: 'get', path: TIMELINE_PATH, label: 'three-body-atlas: timeline route', compute: (p) => timeline({
       era: p.get('era') || undefined,
       work: p.get('work') || undefined,
       character: p.get('character') || undefined,
-    }), 'three-body-atlas: timeline route')
+    }) },
 
-    register(PLOT_PATH, (p) => ({ plots: plot({ work: p.get('work') || undefined }) }),
-      'three-body-atlas: plot route')
+    { kind: 'get', path: PLOT_PATH, label: 'three-body-atlas: plot route',
+      compute: (p) => ({ plots: plot({ work: p.get('work') || undefined }) }) },
 
-    register(THEMES_PATH, () => ({ themes: themes() }), 'three-body-atlas: themes route')
-    register(GAME_PATH, () => ({ levels: gameLevels() }), 'three-body-atlas: game route')
-    register(DIFF_PATH, (p) => ({ differences: differences({ media: p.get('media') || undefined }) }),
-      'three-body-atlas: differences route')
+    { kind: 'get', path: THEMES_PATH, label: 'three-body-atlas: themes route', compute: () => ({ themes: themes() }) },
+    { kind: 'get', path: GAME_PATH, label: 'three-body-atlas: game route', compute: () => ({ levels: gameLevels() }) },
+    { kind: 'get', path: DIFF_PATH, label: 'three-body-atlas: differences route',
+      compute: (p) => ({ differences: differences({ media: p.get('media') || undefined }) }) },
 
-    register(ASK_PATH, (p) => ({
+    { kind: 'get', path: ASK_PATH, label: 'three-body-atlas: ask route', compute: (p) => ({
       answer: ask(p.get('q') || ''),
       suggestions: suggestions(),
-    }), 'three-body-atlas: ask route')
+    }) },
 
     // The lab lets a reader override the initial state. Every override is
     // clamped here rather than trusted from the browser, so a hand-edited
     // request cannot ask for a 10^9-step integration.
-    registerAction(SIM_PATH, (body) => {
+    { kind: 'action', path: SIM_PATH, label: 'three-body-atlas: simulate route', compute: (body) => {
       const preset = pickPreset(body && body.preset)
       const config = { bodies: preset.bodies, params: Object.assign({}, preset.params) }
       if (body && body.params && typeof body.params === 'object') {
@@ -975,53 +1051,57 @@ export function apply(ctx) {
         })
       }
       return simulate(Object.assign(config, { lang: langOf(body) }))
-    }, 'three-body-atlas: simulate route')
+    } },
 
-    registerAction(SENS_PATH, (body) => {
+    { kind: 'action', path: SENS_PATH, label: 'three-body-atlas: sensitivity route', compute: (body) => {
       const preset = pickPreset(body && body.preset)
       return sensitivity({
         bodies: preset.bodies,
         epsilon: numberParam(new URLSearchParams(body || {}), 'epsilon', 1e-6),
         lang: langOf(body),
       })
-    }, 'three-body-atlas: sensitivity route')
+    } },
 
-    registerAction(SCAN_PATH, (body) => stabilityScan({
-      samples: Math.round(Number((body && body.samples) || 60)),
-      seed: Number((body && body.seed) || 20230806),
-      lang: langOf(body),
-    }), 'three-body-atlas: stability route')
+    { kind: 'action', path: SCAN_PATH, label: 'three-body-atlas: stability route',
+      compute: (body) => stabilityScan({
+        samples: Math.round(Number((body && body.samples) || 60)),
+        seed: Number((body && body.seed) || 20230806),
+        lang: langOf(body),
+      }) },
 
     // Batched: the client walks `offset` until `done`, and sends back the rows it
     // already has so the final aggregate does not re-integrate the whole sweep.
-    registerAction(CENSUS_PATH, (body) => civilizationCensus({
-      samples: Math.round(Number((body && body.samples) || 60)),
-      offset: Math.round(Number((body && body.offset) || 0)),
-      limit: Math.round(Number((body && body.limit) || 12)),
-      steps: Math.round(Number((body && body.steps) || 16000)),
-      seed: Number((body && body.seed) || 20230806),
-      collected: Array.isArray(body && body.collected) ? body.collected : null,
-      lang: langOf(body),
-    }), 'three-body-atlas: census route')
+    { kind: 'action', path: CENSUS_PATH, label: 'three-body-atlas: census route',
+      compute: (body) => civilizationCensus({
+        samples: Math.round(Number((body && body.samples) || 60)),
+        offset: Math.round(Number((body && body.offset) || 0)),
+        limit: Math.round(Number((body && body.limit) || 12)),
+        steps: Math.round(Number((body && body.steps) || 16000)),
+        seed: Number((body && body.seed) || 20230806),
+        collected: Array.isArray(body && body.collected) ? body.collected : null,
+        lang: langOf(body),
+      }) },
 
-    registerAction(FOREST_PATH, (body) => darkForest({
-      civs: Number((body && body.civs) || 48),
-      rounds: Number((body && body.rounds) || 120),
-      suspicion: Number((body && body.suspicion) ?? 0.55),
-      explosion: Number((body && body.explosion) ?? 0.06),
-      cost: Number((body && body.cost) ?? 0.35),
-      seed: Number((body && body.seed) || 42),
-      lang: langOf(body),
-    }), 'three-body-atlas: dark forest route')
+    { kind: 'action', path: FOREST_PATH, label: 'three-body-atlas: dark forest route',
+      compute: (body) => darkForest({
+        civs: Number((body && body.civs) || 48),
+        rounds: Number((body && body.rounds) || 120),
+        suspicion: Number((body && body.suspicion) ?? 0.55),
+        explosion: Number((body && body.explosion) ?? 0.06),
+        cost: Number((body && body.cost) ?? 0.35),
+        seed: Number((body && body.seed) || 42),
+        lang: langOf(body),
+      }) },
 
-    registerAction(DETERRENCE_PATH, (body) => deterrence({
-      resolve: Number((body && body.resolve) ?? 0.5),
-      invasion: Number((body && body.invasion) ?? 0.6),
-      luck: Number((body && body.luck) ?? 0.5),
-      seed: Number((body && body.seed) || 7),
-      lang: langOf(body),
-    }), 'three-body-atlas: deterrence route')
-  })
+    { kind: 'action', path: DETERRENCE_PATH, label: 'three-body-atlas: deterrence route',
+      compute: (body) => deterrence({
+        resolve: Number((body && body.resolve) ?? 0.5),
+        invasion: Number((body && body.invasion) ?? 0.6),
+        luck: Number((body && body.luck) ?? 0.5),
+        seed: Number((body && body.seed) || 7),
+        lang: langOf(body),
+      }) },
+  ]
 }
 
 function labelOfOutcome(key) {

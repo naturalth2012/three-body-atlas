@@ -580,7 +580,14 @@ window.__ModuleLoader__.load({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(withLang(body)),
       }
-      const res = await fetch(url, init)
+      // The routes require the DSH session cookie (`ctx.connection.requestRejection`),
+      // so this must stay a credentialed same-origin request. `same-origin` is the
+      // default, but stated here because switching to `omit` would make every
+      // panel request answer 401 — and the failure looks like an empty panel,
+      // not an error anyone would trace back to this line.
+      const res = await fetch(url, init === undefined
+        ? { credentials: 'same-origin' }
+        : { ...init, credentials: 'same-origin' })
       if (!res.ok) throw new Error('HTTP ' + res.status)
       return res.json()
     }
