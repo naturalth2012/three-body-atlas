@@ -1100,8 +1100,8 @@ if (fs.existsSync(entryPath) && fs.existsSync(submitPath)) {
     const hostSrc = fs.readFileSync(path.join(root, 'index.js'), 'utf8')
 
     const claims = [
-      ['characters', 56, charsData.length],
-      ['relations', 247, charsData.reduce((n, c) => n + ((c.relations || []).length), 0)],
+      ['characters', 59, charsData.length],
+      ['relations', 257, charsData.reduce((n, c) => n + ((c.relations || []).length), 0)],
       ['plot beats', 46, (plotData.PLOT || []).reduce((n, w) => n + ((w.beats || []).length), 0)],
       ['events', 56, (tlData.EVENTS || []).length],
       ['eras', 10, (tlData.ERAS || []).length],
@@ -1266,6 +1266,219 @@ console.log('\n## 纪元与事件的英文名')
   const eraZh = D.ERAS.find((e) => e.id === 'great-trough')
   assert(eraZh.name === '大低谷', '中文纪元名未被改动')
   assert(D.EVENTS.filter((e) => CJK.test(e.title)).length === D.EVENTS.length, '中文事件标题未被改动')
+}
+
+console.log('\n## 改编并排对照')
+// The diff data was already three-part (book / screen / impact) but only ever
+// rendered as a vertical list, which loses the contrast that makes it useful.
+{
+  const diffTabStart = client.indexOf('const DiffTab = ')
+  assert(diffTabStart > 0, 'client.js 有 DiffTab')
+  const diffTab = client.slice(diffTabStart, client.indexOf('\n    }', diffTabStart))
+
+  // The side-by-side view is an addition, not a replacement: the list must stay.
+  assert(/const \[view, setView\] = React\.useState\('list'\)/.test(diffTab),
+    'DiffTab 默认仍是列表视图（新视图是增量）')
+  assert(/const cards = list\.map/.test(diffTab) && /const sideCards = list\.map/.test(diffTab),
+    '两种视图各有自己的卡片构造')
+  assert(/view === 'side' \? sideCards : cards/.test(diffTab), '视图切换选择对应卡片')
+
+  // Two columns, and the impact sits below both — not as a third column.
+  assert(/tba-sbs/.test(diffTab) && /tba-sbs-col/.test(diffTab), '并排视图有左右两栏')
+  assert(/tba-sbs-impact/.test(diffTab), '并排视图把影响放在两栏下方')
+  const sideBlock = diffTab.slice(diffTab.indexOf('const sideCards'))
+  assert(!/tba-sbs-impact[\s\S]{0,40}tba-sbs-col/.test(sideBlock.slice(0, 900)) ||
+    sideBlock.indexOf('tba-sbs-impact') > sideBlock.indexOf('tba-sbs-col'),
+    '影响条在结构上位于两栏之后')
+
+  // The existing media filter must survive the change.
+  assert(/data\.differences\.filter\(\(d\) => d\.media === media\)/.test(diffTab), '媒体筛选仍然生效')
+
+  // CSS: single-column wrapper and a narrow-panel fallback.
+  assert(/\.tba-one\{display:grid;grid-template-columns:1fr/.test(client), '并排视图用单列容器')
+  assert(/@media \(max-width:720px\)\{\.tba-sbs\{grid-template-columns:1fr\}\}/.test(client),
+    '窄屏时两栏改为上下堆叠')
+
+  // Both locales must name the toggle.
+  for (const key of ['diffViewList', 'diffViewSide']) {
+    const hits = (client.match(new RegExp(key + ':', 'g')) || []).length
+    assert(hits >= 2, `${key} 在中英两套文案里都有（找到 ${hits}）`)
+  }
+  // Every diff record must still carry the three parts the view renders.
+  const badDiff = D.DIFFERENCES.filter((d) => !d.book || !d.screen || !d.impact || !d.topic || !d.media)
+  assert(badDiff.length === 0, `差异条目字段完整${badDiff.length ? '：缺 ' + badDiff.map((d) => d.id).join(',') : ''}`)
+}
+
+console.log('\n## 配角补全')
+// Three secondary characters were missing from the 56. Adding them is only
+// safe if they carry the same fields and their relations resolve — an orphan
+// node would show up in the graph as a dead end.
+{
+  const added = ['wu-yue', 'bi-yunfeng', 'mikhail']
+  for (const id of added) {
+    const c = D.CHARACTER_BY_ID[id]
+    assert(c !== undefined, `新增角色 ${id} 存在`)
+    if (!c) continue
+    for (const field of ['name', 'nameEn', 'summary', 'details', 'fate', 'faction', 'firstWork']) {
+      assert(c[field] !== undefined && c[field] !== '', `${id} 有 ${field}`)
+    }
+    assert(Array.isArray(c.relations) && c.relations.length >= 2, `${id} 有至少 2 条关系`)
+    // A relation must point at somebody who exists, or the graph grows a stub.
+    const dangling = c.relations.filter((r) => !D.CHARACTER_BY_ID[r.to])
+    assert(dangling.length === 0,
+      `${id} 的关系目标都存在${dangling.length ? '：悬空 ' + dangling.map((r) => r.to).join(',') : ''}`)
+    assert(c.nameEn && !/[\u4e00-\u9fa5]/.test(c.nameEn), `${id} 的英文名无中文`)
+  }
+  // The cast stays curated: a couple of additions, not an open door.
+  assert(D.CHARACTERS.length >= 56 && D.CHARACTERS.length <= 62,
+    `人物总数 ${D.CHARACTERS.length} 在 56–62 之间（精选而非堆砌）`)
+  // 艾 AA was already present under id `aa`; the probe that "found it missing"
+  // had matched on a spaced spelling. Guard the id so it is not added twice.
+  assert(D.CHARACTER_BY_ID['aa'] !== undefined, '艾 AA 仍在册（id 为 aa）')
+  assert(D.CHARACTER_BY_ID['ai-aa'] === undefined, '没有重复添加艾 AA')
+  // No character may be unreachable: every relation target exists, so no node
+  // is a stub. This is the graph-integrity check the additions could break.
+  const allDangling = []
+  for (const c of D.CHARACTERS) {
+    for (const r of c.relations || []) if (!D.CHARACTER_BY_ID[r.to]) allDangling.push(c.id + '→' + r.to)
+  }
+  assert(allDangling.length === 0, `关系图无悬空边${allDangling.length ? '：' + allDangling.slice(0, 5).join(',') : ''}`)
+}
+
+console.log('\n## 阅读进度与自动剧透')
+// The tier picker was manual: every visit needed the reader to re-state where
+// they were. Progress per work now supplies the ceiling — but a manual pick must
+// keep winning, or the control silently undoes the reader's last action.
+{
+  const vm = await import('node:vm')
+  let captured
+  const sandbox = {
+    window: { __ModuleLoader__: { load(entry) { captured = entry } } },
+    console, setTimeout, clearTimeout,
+  }
+  sandbox.globalThis = sandbox
+  vm.createContext(sandbox)
+  vm.runInContext(client, sandbox, { filename: 'client.js' })
+  const T = captured.factory((n) => (n === 'react' ? new Proxy({}, { get: () => () => null }) : undefined)).__test__
+
+  assert(typeof T.tierFromProgress === 'function', 'client.js 导出 tierFromProgress')
+  const derive = T.tierFromProgress
+
+  // Unread never raises the ceiling; absent progress yields null so the caller
+  // keeps the reader's own choice.
+  assert(derive({}) === null, '没有进度时返回 null（保持手动选择）')
+  assert(derive({ 'three-body': 'unread' }) === null, '未读不提升层级')
+  assert(derive(null) === null, '进度为 null 时不抛错')
+
+  // Reading and finished both unlock that work.
+  assert(derive({ 'three-body': 'reading' }) === 1, '在读第一部 → 层级 1')
+  assert(derive({ 'three-body': 'done' }) === 1, '读完第一部 → 层级 1')
+  assert(derive({ 'dark-forest': 'reading' }) === 2, '在读第二部 → 层级 2')
+  assert(derive({ 'deaths-end': 'done' }) === 3, '读完第三部 → 层级 3')
+
+  // The highest started work wins, regardless of key order.
+  assert(derive({ 'three-body': 'done', 'dark-forest': 'reading' }) === 2, '取最高已开始的作品')
+  assert(derive({ 'deaths-end': 'reading', 'three-body': 'done' }) === 3, '顺序不影响结果')
+
+  // Unknown ids are ignored rather than throwing or yielding NaN.
+  assert(derive({ 'not-a-work': 'done' }) === null, '未知作品 id 被忽略')
+
+  // Manual priority: a pick writes the manual flag, and the flag suppresses
+  // progress-derived tiers on the next load.
+  assert(/PREF_TIER_MANUAL/.test(client), '存在手动优先的偏好键')
+  assert(/writePref\(PREF_TIER_MANUAL, '1'\)/.test(client), '手动调整层级时记下手动标记')
+  assert(/writePref\(PREF_TIER_MANUAL, '0'\)/.test(client), '跟随进度时清除手动标记')
+  assert(/manual \? h\('span'/.test(client) || /manual \?/.test(client), '手动模式下界面给出提示')
+
+  // Progress must stay local: no network call may carry it.
+  assert(!/fetch\([^)]*progress/i.test(client), '阅读进度不发网络请求')
+  assert(/readPref\(PREF_PROGRESS/.test(client) && /writePref\(PREF_PROGRESS/.test(client),
+    '阅读进度只读写本地偏好')
+
+  // Granularity is per work by design; the control must not invent chapters.
+  assert(!/chapter|章节序号/.test(client.slice(client.indexOf('const ProgressPicker'), client.indexOf('const ProgressPicker') + 2500)),
+    '进度控件不引入章节粒度（跨版本不一致）')
+}
+
+console.log('\n## 闪卡自测')
+// Cards are generated from the entries, so the quiz cannot drift from the atlas.
+// The rules that keep it honest are testable: no self-revealing stems, exactly
+// four distinct options, the answer among them, and the spoiler ceiling respected.
+{
+  const vm = await import('node:vm')
+  let captured
+  const sandbox = {
+    window: { __ModuleLoader__: { load(entry) { captured = entry } } },
+    console, setTimeout, clearTimeout,
+  }
+  sandbox.globalThis = sandbox
+  vm.createContext(sandbox)
+  vm.runInContext(client, sandbox, { filename: 'client.js' })
+  const T = captured.factory((n) => (n === 'react' ? new Proxy({}, { get: () => () => null }) : undefined)).__test__
+
+  assert(typeof T.buildCards === 'function', 'client.js 导出 buildCards')
+  const bundle = E.bundle ? E.bundle() : null
+  assert(bundle !== null, 'engine 提供 bundle()')
+
+  const all = T.buildCards(bundle, 3)
+  assert(all.length >= 30, `可出题数 ${all.length} 不少于 30`)
+
+  // Shape: four distinct options, the answer among them, no answer in the stem.
+  const malformed = all.filter((c) => c.options.length !== 4 || new Set(c.options).size !== 4 ||
+    !c.options.includes(c.answer))
+  assert(malformed.length === 0,
+    `每题 4 个不重复选项且含正确答案${malformed.length ? '：异常 ' + malformed.length : ''}`)
+  const revealing = all.filter((c) => c.stem.includes(c.answer))
+  assert(revealing.length === 0,
+    `题干不含答案（否则题目自我泄露）${revealing.length ? '：' + revealing.slice(0, 3).map((c) => c.id).join(',') : ''}`)
+  const emptyStem = all.filter((c) => !c.stem || c.stem.trim().length < 15)
+  assert(emptyStem.length === 0, '题干有实质内容（剔除答案名后仍够长）')
+
+  // All three kinds must appear, or the quiz only tests one faculty.
+  const kinds = new Set(all.map((c) => c.kind))
+  for (const kind of ['character', 'glossary', 'tech']) {
+    assert(kinds.has(kind), `题目覆盖 ${kind} 类型`)
+  }
+
+  // Spoiler ceiling: a tier-1 reader must not be quizzed on later books.
+  const low = T.buildCards(bundle, 1)
+  assert(low.length < all.length, `层级 1 的题量 ${low.length} 少于全量 ${all.length}`)
+  assert(low.length >= 20, `层级 1 仍有足够题目（${low.length}）`)
+  const deathsEndNames = new Set(
+    (D.CHARACTERS || []).filter((c) => c.firstWork === 'deaths-end').map((c) => c.name),
+  )
+  const leaked = low.filter((c) => c.kind === 'character' && deathsEndNames.has(c.answer))
+  assert(leaked.length === 0,
+    `层级 1 不考第三部人物${leaked.length ? '：' + leaked.slice(0, 3).map((c) => c.answer).join(',') : ''}`)
+
+  // Every level must be a strict subset of the next, or a reader who lowers the
+  // ceiling would see questions appear rather than disappear.
+  const counts = [0, 1, 2, 3].map((cap) => T.buildCards(bundle, cap).length)
+  assert(counts.every((n, i) => i === 0 || n >= counts[i - 1]),
+    `题量随层级单调不减：${counts.join(' → ')}`)
+
+  // Technologies need firstWork in the payload or they only ever appear at the
+  // top level — that was a real bug, so pin the field's presence.
+  const techRow = bundle.tech && bundle.tech[0]
+  assert(techRow && techRow.firstWork !== undefined, 'bundle.tech 带 firstWork（否则技术题无法分级）')
+  assert(T.buildCards(bundle, 2).some((c) => c.kind === 'tech'), '层级 2 也有技术题')
+
+  // A record with no derivable tier must not slip past the ceiling.
+  const tierZero = T.buildCards(bundle, 0)
+  assert(tierZero.length < 5, `层级 0 只出前史题目（${tierZero.length} 张）`)
+
+  // Determinism: the same data must build the same quiz, or tests cannot pin it.
+  const again = T.buildCards(bundle, 3)
+  assert(JSON.stringify(again) === JSON.stringify(all), '相同输入生成相同的题（可复现）')
+
+  // The score is session-only by design.
+  assert(!/writePref\([^)]*quiz/i.test(client), '闪卡成绩不持久化（是自测不是考试）')
+  assert(/const \[score, setScore\] = React\.useState/.test(client), '成绩只存在组件状态里')
+  assert(/tabQuiz/.test(client) && /'quiz'/.test(client), '闪卡有独立标签页')
+  for (const key of ['quizHint', 'quizRight', 'quizWrong', 'quizNext', 'tabQuiz']) {
+    const hits = (client.match(new RegExp(key + ':', 'g')) || []).length
+    assert(hits >= 2, `${key} 在中英两套文案里都有（找到 ${hits}）`)
+  }
 }
 assert(/aria-selected/.test(client), '标签页有 aria-selected')
 assert(/graphZoomIn/.test(client), '图谱有非手势的缩放按钮')

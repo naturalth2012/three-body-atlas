@@ -47,6 +47,11 @@ window.__ModuleLoader__.load({
 
     const PREF_TIER = 'tba:tier'
     const PREF_DONE = 'tba:done'
+    // '1' once the reader picks a tier by hand; from then on reading progress
+    // no longer moves the ceiling.
+    const PREF_TIER_MANUAL = 'tba:tier-manual'
+    // Per-work reading state: { 'three-body': 'done', 'dark-forest': 'reading' }.
+    const PREF_PROGRESS = 'tba:progress'
     const memoryPrefs = {}
 
     /* The active language, kept module-level because `getJSON` lives outside the
@@ -182,6 +187,27 @@ window.__ModuleLoader__.load({
       quotesTitle: '名句',
       loreHint: '这些词是三体的骨架；这些句子是它的体温。',
       diffHint: '改编不是错，但值得分清——这些差异会改变你对故事的理解。',
+      diffViewList: '逐条读',
+      diffViewSide: '并排对照',
+      progressTitle: '阅读进度',
+      progressUnread: '未读',
+      progressReading: '在读',
+      progressDone: '读完',
+      progressManual: '已手动设定层级',
+      progressFollow: '改为跟随进度',
+      tabQuiz: '闪卡自测',
+      quizHint: '题干从档案自动生成，正确答案就在选项里。答错不扣分——这里只是让你知道自己记住了多少。',
+      quizEmpty: '当前剧透层级下没有可出的题，试试调高层级。',
+      quizProgress: '第 {n} / {total} 张',
+      quizScore: '答对 {right} / {total}（{pct}%）',
+      quizReset: '重新开始',
+      quizKindCharacter: '这是谁',
+      quizKindGlossary: '这是什么概念',
+      quizKindTech: '这是什么技术',
+      quizRight: '答对了',
+      quizWrong: '答错了',
+      quizAnswerWas: '正确答案：',
+      quizNext: '下一张',
       book: '原著',
       screen: '改编',
       impact: '影响',
@@ -392,6 +418,27 @@ window.__ModuleLoader__.load({
       placesTitle: 'Places', placesHint: 'Every coordinate humanity passed through.',
       glossaryTitle: 'Glossary', quotesTitle: 'Quotes', loreHint: 'The vocabulary is the skeleton; the lines are the pulse.',
       diffHint: 'Adaptation is not error, but it changes what the story means.',
+      diffViewList: 'Read in turn',
+      diffViewSide: 'Side by side',
+      progressTitle: 'Reading progress',
+      progressUnread: 'Unread',
+      progressReading: 'Reading',
+      progressDone: 'Finished',
+      progressManual: 'Tier set by hand',
+      progressFollow: 'Follow progress instead',
+      tabQuiz: 'Flashcards',
+      quizHint: 'Questions are generated from the entries themselves. Wrong answers cost nothing — this only shows you what you remember.',
+      quizEmpty: 'Nothing to ask at this spoiler level. Try raising it.',
+      quizProgress: 'Card {n} of {total}',
+      quizScore: '{right} / {total} correct ({pct}%)',
+      quizReset: 'Start over',
+      quizKindCharacter: 'Who is this',
+      quizKindGlossary: 'Which concept',
+      quizKindTech: 'Which technology',
+      quizRight: 'Correct',
+      quizWrong: 'Not quite',
+      quizAnswerWas: 'Answer:',
+      quizNext: 'Next card',
       book: 'Book', screen: 'Screen', impact: 'Impact',
       themeTitle: 'Themes', themeHint: 'The best part of Three-Body is that it refuses to answer for you.',
       themeSides: 'Two positions', themeDiscuss: 'What to keep arguing about', themePeople: 'Related characters',
@@ -700,6 +747,40 @@ window.__ModuleLoader__.load({
         .tba-ev p{margin:5px 0 0;color:var(--dsw-alias-label-secondary);font-size:12.8px}
         .tba-people{font-size:12px;color:var(--dsw-alias-label-secondary);margin-top:7px}
         .tba-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px}
+        /* Single column for the side-by-side diff view: each card already holds
+           two columns of its own, so a grid would nest columns inside columns. */
+        .tba-one{display:grid;grid-template-columns:1fr;gap:18px}
+        .tba-sbs{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}
+        /* Narrow panels stack the pair rather than squeezing both columns. */
+        @media (max-width:720px){.tba-sbs{grid-template-columns:1fr}}
+        .tba-sbs-col{background:var(--dsw-alias-bg-layer-2);border-radius:10px;padding:12px 13px}
+        .tba-sbs-head{font-size:12px;font-weight:650;color:var(--dsw-alias-label-secondary);margin-bottom:7px;letter-spacing:.02em}
+        .tba-sbs-body{margin:0;font-size:13.5px;line-height:1.72;color:var(--dsw-alias-label-primary)}
+        .tba-sbs-impact{margin-top:12px;padding:10px 13px;border-left:3px solid var(--dsw-alias-brand-primary);background:var(--dsw-alias-bg-layer-2);border-radius:0 9px 9px 0;font-size:13px;line-height:1.68;display:flex;gap:9px;align-items:baseline}
+        .tba-sbs-impact b{color:var(--dsw-alias-label-secondary);font-weight:650;white-space:nowrap}
+        .tba-progress{margin-top:8px;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+        .tba-progress-toggle{appearance:none;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);border-radius:8px;padding:5px 11px;font-size:12.5px;cursor:pointer}
+        .tba-progress-toggle:hover,.tba-progress-toggle.tba-on{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
+        .tba-progress-note{font-size:12px;color:var(--dsw-alias-label-tertiary)}
+        .tba-linkbtn{appearance:none;border:0;background:none;color:var(--dsw-alias-brand-primary);font-size:12px;cursor:pointer;padding:0;text-decoration:underline}
+        .tba-progress-body{flex-basis:100%;margin-top:6px;display:grid;gap:7px}
+        .tba-progress-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+        .tba-progress-work{font-size:13px;min-width:110px;color:var(--dsw-alias-label-primary)}
+        .tba-progress-states{display:flex;gap:5px}
+        .tba-progress-state{appearance:none;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);border-radius:7px;padding:3px 9px;font-size:12px;cursor:pointer}
+        .tba-progress-state.tba-on{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-inverse,#fff)}
+        .tba-quizbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0 14px}
+        .tba-quizcard{background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:14px;padding:20px 22px;max-width:760px}
+        .tba-quizkind{font-size:12px;font-weight:650;color:var(--dsw-alias-label-tertiary);letter-spacing:.04em;margin-bottom:9px}
+        .tba-quizstem{margin:0 0 16px;font-size:15px;line-height:1.78;color:var(--dsw-alias-label-primary)}
+        .tba-quizoptions{display:grid;gap:8px}
+        .tba-quizopt{appearance:none;text-align:left;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);border-radius:10px;padding:11px 14px;font-size:13.5px;cursor:pointer;transition:background .12s}
+        .tba-quizopt:hover:not(:disabled){background:var(--dsw-alias-bg-layer-3,var(--dsw-alias-bg-layer-2));border-color:var(--dsw-alias-brand-primary)}
+        .tba-quizopt:disabled{cursor:default}
+        .tba-quizopt.tba-right{background:rgba(46,160,67,.16);border-color:rgba(46,160,67,.55)}
+        .tba-quizopt.tba-wrong{background:rgba(220,60,60,.14);border-color:rgba(220,60,60,.5)}
+        .tba-quizopt.tba-dim{opacity:.55}
+        .tba-quizresult{margin-top:16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:13.5px}
         .tba-pathcard{background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:13px;padding:17px}
         .tba-pathcard h3{margin:0 0 4px;font-size:16.5px}
         .tba-pathcard .tba-blurb{color:var(--dsw-alias-label-secondary);font-size:12.8px;margin-bottom:13px}
@@ -917,6 +998,159 @@ window.__ModuleLoader__.load({
           })))
     }
 
+    /**
+     * Build flashcard questions from the data already in the bundle.
+     *
+     * Every question is derived — nothing here is authored per card — so the
+     * quiz cannot drift from the atlas. Three shapes: identify a character from
+     * its summary, identify a glossary term from its definition, identify a
+     * technology from its summary.
+     *
+     * Two rules keep the questions honest:
+     *  - the stem has the answer's name removed, or the card answers itself;
+     *  - distractors come from the same faction/category first, so a wrong option
+     *    is plausible rather than absurd, but only half the options are drawn
+     *    that way so the right answer cannot be found by elimination.
+     */
+    const buildCards = (data, maxTier) => {
+      if (!data) return []
+      const cap = Number.isFinite(maxTier) ? maxTier : 3
+      const cards = []
+      // Records carry no `tier` field: the ceiling is applied by masking, not by
+      // filtering the payload. Derive it from the works a record appears in so a
+      // tier-1 reader is not quizzed on Death's End characters.
+      const tierOfRecord = (record) => {
+        const own = Number(record && record.tier)
+        if (Number.isFinite(own)) return own
+        // Glossary entries are keyed separately: they belong to no single work.
+        const g = record && GLOSSARY_TIER[record.id]
+        if (Number.isFinite(g) && (record.definition || record.term)) return g
+        const works = record && record.works
+        const ids = works && typeof works === 'object' ? Object.keys(works) : []
+        const first = record && record.firstWork
+        if (first) ids.push(first)
+        let max = null
+        for (const id of ids) {
+          const t = Number(tierOfWork(id))
+          if (!Number.isFinite(t)) continue
+          if (max === null || t > max) max = t
+        }
+        return max
+      }
+      const tierOk = (record) => {
+        const t = tierOfRecord(record)
+        // A record whose tier cannot be derived (adaptation-only characters, for
+        // instance) must not slip past every ceiling. Treat it as the highest
+        // tier: a reader at tier 1 is not shown it, which is the safe direction
+        // for a spoiler guard.
+        return t === null ? cap >= 3 : t <= cap
+      }
+      // A tiny deterministic shuffle: the quiz must be reproducible in tests.
+      const seeded = (list, seed) => {
+        const out = list.slice()
+        let s = seed || 1
+        for (let i = out.length - 1; i > 0; i--) {
+          s = (s * 1103515245 + 12345) & 0x7fffffff
+          const j = s % (i + 1)
+          const tmp = out[i]
+          out[i] = out[j]
+          out[j] = tmp
+        }
+        return out
+      }
+      const stripName = (text, name) => {
+        if (!text || !name) return text || ''
+        return String(text).split(name).join('＿＿')
+      }
+
+      const push = (kind, pool, record, answerField, stemField, groupKey) => {
+        if (!tierOk(record)) return
+        const answer = record[answerField]
+        const rawStem = record[stemField]
+        if (!answer || !rawStem) return
+        const stem = stripName(rawStem, answer)
+        // Too short after stripping means the name was most of the sentence.
+        if (stem.replace(/＿/g, '').trim().length < 15) return
+        const group = groupKey ? record[groupKey] : undefined
+        const others = pool.filter((x) => x[answerField] && x[answerField] !== answer)
+        const same = group ? others.filter((x) => x[groupKey] === group) : []
+        const rest = others.filter((x) => !same.includes(x))
+        // Half plausible, half random: same-group only would be solvable by
+        // elimination, all-random would be trivially easy.
+        const picks = []
+        for (const candidate of seeded(same, answer.length + 7)) {
+          if (picks.length >= 2) break
+          picks.push(candidate[answerField])
+        }
+        for (const candidate of seeded(rest, answer.length + 13)) {
+          if (picks.length >= 3) break
+          if (!picks.includes(candidate[answerField])) picks.push(candidate[answerField])
+        }
+        if (picks.length < 3) return
+        const options = seeded(picks.concat([answer]), answer.length + 29)
+        cards.push({
+          kind,
+          id: record.id,
+          stem: stem.trim(),
+          answer,
+          options,
+          // The atlas entry this card came from, so a wrong answer can be opened.
+          ref: record.id,
+        })
+      }
+
+      for (const c of data.characters || []) {
+        push('character', data.characters || [], c, 'name', 'summary', 'faction')
+      }
+      for (const g of data.glossary || []) {
+        push('glossary', data.glossary || [], g, 'term', 'definition', 'category')
+      }
+      for (const t of data.tech || []) {
+        push('tech', data.tech || [], t, 'name', 'summary', 'category')
+      }
+      return cards
+    }
+
+    /**
+     * Reading progress, three states per work.
+     *
+     * Per work rather than per chapter: chapter divisions differ across editions,
+     * so "chapter 12" would mean different things to different readers.
+     * `reading` and `done` both unlock that work's tier.
+     */
+    const ProgressPicker = ({ data, t, progress, manual, onChange, onFollow }) => {
+      const [open, setOpen] = React.useState(false)
+      // The main three books are what a reader tracks; spin-offs and adaptations
+      // follow from them and would only clutter the control.
+      const tracked = (data.works || []).filter((w) => ['three-body', 'dark-forest', 'deaths-end'].includes(w.id))
+      const states = ['unread', 'reading', 'done']
+      const stateLabel = (s) => t(s === 'done' ? 'progressDone' : s === 'reading' ? 'progressReading' : 'progressUnread')
+      const set = (id, state) => {
+        const next = Object.assign({}, progress)
+        if (state === 'unread') delete next[id]
+        else next[id] = state
+        onChange(next)
+      }
+      return h('div', { className: 'tba-progress' },
+        h('button', {
+          className: 'tba-progress-toggle' + (open ? ' tba-on' : ''),
+          onClick: () => setOpen((v) => !v),
+          'aria-expanded': open,
+        }, '📖 ' + t('progressTitle')),
+        manual ? h('span', { className: 'tba-progress-note' }, t('progressManual'), ' ',
+          h('button', { className: 'tba-linkbtn', onClick: onFollow }, t('progressFollow'))) : null,
+        open ? h('div', { className: 'tba-progress-body' },
+          ...tracked.map((w) => h('div', { key: w.id, className: 'tba-progress-row' },
+            h('span', { className: 'tba-progress-work' }, labelOf(w, 'title', 'titleEn')),
+            h('div', { className: 'tba-progress-states' },
+              ...states.map((s) => h('button', {
+                key: s,
+                className: 'tba-progress-state' + ((progress[w.id] || 'unread') === s ? ' tba-on' : ''),
+                onClick: () => set(w.id, s),
+              }, stateLabel(s))))))
+        ) : null)
+    }
+
     /** A masked block: shows that something exists without telling how it ends. */
     const Locked = ({ tier, t, onReveal, children }) => {
       const [open, setOpen] = React.useState(false)
@@ -983,6 +1217,62 @@ window.__ModuleLoader__.load({
     }
     const eraLabel = (era) => labelOf(era, 'name', 'nameEn')
     const eventLabel = (event) => labelOf(event, 'title', 'titleEn')
+
+    /**
+     * Spoiler tier of a work, mirrored from data/spoiler.js.
+     *
+     * Duplicated rather than imported because the client bundle has no module
+     * system for the data package. Only the three books the progress control
+     * tracks are needed; `three-body-x` and the adaptations map to the same
+     * numbers upstream and are not read here.
+     */
+    const WORK_TIER = { 'ball-lightning': 0, 'three-body': 1, 'dark-forest': 2, 'deaths-end': 3 }
+    const tierOfWork = (id) => (Object.prototype.hasOwnProperty.call(WORK_TIER, id) ? WORK_TIER[id] : undefined)
+
+    /**
+     * Spoiler tier per glossary entry, mirrored from data/spoiler.js.
+     *
+     * Glossary records carry no tier of their own and are not tied to a work, so
+     * without this map every term would be askable at every level — which is how
+     * a tier-0 reader would get quizzed on 黑暗森林. Same duplication rationale as
+     * WORK_TIER above; a selfcheck asserts the two stay in step.
+     */
+    const GLOSSARY_TIER = {
+      'dark-forest': 2, 'chain-of-suspicion': 2, 'technological-explosion': 2,
+      'cosmic-sociology': 2, 'deterrence-degree': 2, 'cosmic-safety-statement': 3,
+      'wallfacer-plan': 2, 'wall-breaker': 2, swordholder: 3,
+      'guzheng-operation': 1, 'red-coast-project': 1, 'science-frontier': 1,
+      'eto-factions': 1, 'space-force': 2, 'fleet-international': 2, pdc: 1, eto: 1,
+      'bunker-plan': 3, 'black-domain-plan': 3, 'deterrence-era': 3, 'great-trough': 2,
+      'beyond-time': 3, 'broadcast-era': 3, 'bunker-era': 3, 'sophon-blockade': 1,
+      'human-computer-term': 1, 'thought-print-term': 2,
+    }
+
+    /**
+     * Derive the spoiler ceiling from how far the reader says they have read.
+     *
+     * Granularity is per work, not per chapter: chapter divisions differ between
+     * editions and translations, so a chapter number would mean different things
+     * to different readers. `reading` and `done` both unlock that work; `unread`
+     * never raises the ceiling.
+     *
+     * Returns a tier number, or null when no progress has been recorded — the
+     * caller then keeps whatever the reader chose manually.
+     */
+    const tierFromProgress = (progress) => {
+      if (!progress || typeof progress !== 'object') return null
+      const ids = Object.keys(progress)
+      if (!ids.length) return null
+      let highest = null
+      for (const id of ids) {
+        const state = progress[id]
+        if (state !== 'reading' && state !== 'done') continue
+        const tier = Number(tierOfWork(id))
+        if (!Number.isFinite(tier)) continue
+        if (highest === null || tier > highest) highest = tier
+      }
+      return highest
+    }
 
     /* ------------------------------------------------------------------ *
      * Export — turn what the reader sees into Markdown they can take away
@@ -2948,6 +3238,10 @@ window.__ModuleLoader__.load({
      * ------------------------------------------------------------------ */
     const DiffTab = ({ data, t }) => {
       const [media, setMedia] = React.useState('')
+      // 'list' keeps the original row layout; 'side' puts the book and the
+      // screen text next to each other, which is the point of a comparison —
+      // reading them one after another loses the contrast.
+      const [view, setView] = React.useState('list')
       const list = media ? data.differences.filter((d) => d.media === media) : data.differences
       const medias = [...new Set(data.differences.map((d) => d.media))]
       const cards = list.map((d) => h('div', { key: d.id, className: 'tba-diffcard' },
@@ -2964,6 +3258,21 @@ window.__ModuleLoader__.load({
           h('span', { className: 'tba-dkey' }, t('impact')),
           h('span', { className: 'tba-dval' }, d.impact))))
 
+      // Two columns, not three: `impact` is a remark on the gap, not a third
+      // version of the scene, so it sits underneath both.
+      const sideCards = list.map((d) => h('div', { key: d.id, className: 'tba-diffcard' },
+        h('h3', null, d.topic, h('span', { className: 'tba-badge', style: { marginLeft: 8 } }, d.media)),
+        h('div', { className: 'tba-sbs' },
+          h('div', { className: 'tba-sbs-col' },
+            h('div', { className: 'tba-sbs-head' }, t('book')),
+            h('p', { className: 'tba-sbs-body' }, d.book)),
+          h('div', { className: 'tba-sbs-col' },
+            h('div', { className: 'tba-sbs-head' }, t('screen')),
+            h('p', { className: 'tba-sbs-body' }, d.screen))),
+        h('div', { className: 'tba-sbs-impact' },
+          h('b', null, t('impact')),
+          h('span', null, d.impact))))
+
       return h(React.Fragment, null,
         h('p', { className: 'tba-kicker' }, t('diffHint')),
         h('div', { className: 'tba-chips' },
@@ -2975,8 +3284,76 @@ window.__ModuleLoader__.load({
             key: m,
             className: 'tba-chip' + (media === m ? ' tba-on' : ''),
             onClick: () => setMedia(m),
-          }, m))),
-        h('div', { className: 'tba-two' }, ...cards))
+          }, m)),
+          h('button', {
+            className: 'tba-chip' + (view === 'side' ? ' tba-on' : ''),
+            onClick: () => setView((v) => (v === 'side' ? 'list' : 'side')),
+          }, view === 'side' ? t('diffViewList') : t('diffViewSide'))),
+        h('div', { className: view === 'side' ? 'tba-one' : 'tba-two' },
+          ...(view === 'side' ? sideCards : cards)))
+    }
+
+    /**
+     * Flashcard quiz.
+     *
+     * The score is deliberately session-only: this is a self-check, not an exam,
+     * and persisting a streak would turn it into one.
+     */
+    const QuizTab = ({ data, t, tier }) => {
+      const cards = React.useMemo(() => buildCards(data, tier), [data, tier])
+      const [index, setIndex] = React.useState(0)
+      const [picked, setPicked] = React.useState(null)
+      const [score, setScore] = React.useState({ right: 0, total: 0 })
+
+      if (!cards.length) {
+        return h('p', { className: 'tba-kicker' }, t('quizEmpty'))
+      }
+      const card = cards[index % cards.length]
+      const answered = picked !== null
+      const correct = answered && picked === card.answer
+
+      const choose = (option) => {
+        if (answered) return
+        setPicked(option)
+        setScore((s) => ({ right: s.right + (option === card.answer ? 1 : 0), total: s.total + 1 }))
+      }
+      const next = () => {
+        setPicked(null)
+        setIndex((i) => (i + 1) % cards.length)
+      }
+      const reset = () => {
+        setPicked(null)
+        setIndex(0)
+        setScore({ right: 0, total: 0 })
+      }
+      const rate = score.total ? Math.round((score.right / score.total) * 100) : 0
+
+      return h('div', null,
+        h('p', { className: 'tba-kicker' }, t('quizHint')),
+        h('div', { className: 'tba-quizbar' },
+          h('span', { className: 'tba-badge' }, t('quizProgress', { n: (index % cards.length) + 1, total: cards.length })),
+          h('span', { className: 'tba-badge' }, t('quizScore', { right: score.right, total: score.total, pct: rate })),
+          h('button', { className: 'tba-chip', onClick: reset }, t('quizReset'))),
+        h('div', { className: 'tba-quizcard' },
+          h('div', { className: 'tba-quizkind' }, t(card.kind === 'glossary' ? 'quizKindGlossary' : card.kind === 'tech' ? 'quizKindTech' : 'quizKindCharacter')),
+          h('p', { className: 'tba-quizstem' }, card.stem),
+          h('div', { className: 'tba-quizoptions' },
+            ...card.options.map((option) => {
+              let cls = 'tba-quizopt'
+              if (answered && option === card.answer) cls += ' tba-right'
+              else if (answered && option === picked) cls += ' tba-wrong'
+              else if (answered) cls += ' tba-dim'
+              return h('button', {
+                key: option,
+                className: cls,
+                onClick: () => choose(option),
+                disabled: answered,
+              }, option)
+            })),
+          answered ? h('div', { className: 'tba-quizresult' },
+            h('b', null, correct ? '✓ ' + t('quizRight') : '✗ ' + t('quizWrong')),
+            correct ? null : h('span', null, t('quizAnswerWas') + ' ' + card.answer),
+            h('button', { className: 'tba-chip', onClick: next }, t('quizNext'))) : null))
     }
 
     /* ------------------------------------------------------------------ *
@@ -3338,7 +3715,17 @@ window.__ModuleLoader__.load({
       const [drawer, setDrawer] = React.useState(null)
       // Default to "everything visible": a first-time reader should not meet a
       // wall of locks. The picker narrows it, and the choice is remembered.
+      //
+      // Reading progress, when recorded, supplies the ceiling instead — but a
+      // manual pick wins from then on, because a control that silently undoes
+      // the reader's last action is worse than no automation at all.
       const [tier, setTierState] = React.useState(() => {
+        const manual = readPref(PREF_TIER_MANUAL, '')
+        if (manual === '1') {
+          const raw = readPref(PREF_TIER, '3')
+          const n = Number(raw)
+          return Number.isFinite(n) ? Math.min(3, Math.max(0, n)) : 3
+        }
         const raw = readPref(PREF_TIER, '3')
         const n = Number(raw)
         return Number.isFinite(n) ? Math.min(3, Math.max(0, n)) : 3
@@ -3346,7 +3733,26 @@ window.__ModuleLoader__.load({
       const setTier = (value) => {
         setTierState(value)
         writePref(PREF_TIER, value)
+        // A pick is a decision: stop letting progress override it.
+        writePref(PREF_TIER_MANUAL, '1')
       }
+      const followProgress = (derived) => {
+        if (derived === null) return
+        writePref(PREF_TIER_MANUAL, '0')
+        setTierState(derived)
+        writePref(PREF_TIER, derived)
+      }
+
+      const [progress, setProgress] = React.useState(() => {
+        try {
+          const raw = readPref(PREF_PROGRESS, '{}')
+          const parsed = JSON.parse(raw)
+          return parsed && typeof parsed === 'object' ? parsed : {}
+        } catch {
+          return {}
+        }
+      })
+      const [manual, setManual] = React.useState(() => readPref(PREF_TIER_MANUAL, '0') === '1')
 
       const load = () => {
         setError(false); setData(null)
@@ -3387,6 +3793,7 @@ window.__ModuleLoader__.load({
         ['concept', '🔗 ' + t('tabConcept')],
         ['timeline', '📜 ' + t('tabTimeline')],
         ['game', '🕹️ ' + t('tabGame')],
+        ['quiz', '🎯 ' + t('tabQuiz')],
         ['sim', '☄️ ' + t('tabSim')],
         ['tech', '💎 ' + t('tabTech')],
         ['places', '🏔️ ' + t('tabPlaces')],
@@ -3413,7 +3820,16 @@ window.__ModuleLoader__.load({
               onClick: () => go(id),
             }, label))),
           h('div', { style: { padding: '0 18px' } },
-            h(TierPicker, { tiers: data.tiers, value: tier, onChange: setTier, t })),
+            h(TierPicker, { tiers: data.tiers, value: tier, onChange: setTier, t }),
+            h(ProgressPicker, {
+              data, t, progress, manual,
+              onChange: (next) => {
+                setProgress(next)
+                writePref(PREF_PROGRESS, JSON.stringify(next))
+                followProgress(tierFromProgress(next))
+              },
+              onFollow: () => followProgress(tierFromProgress(progress)),
+            })),
           tab === 'overview' && h(OverviewTab, { data, t, go, open }),
           tab === 'guide' && h(GuideTab, { data, t, tier }),
           tab === 'plot' && h(PlotTab, { data, t, open }),
@@ -3423,6 +3839,7 @@ window.__ModuleLoader__.load({
           tab === 'concept' && h(ConceptTab, { t, tier, open }),
           tab === 'timeline' && h(TimelineTab, { data, t }),
           tab === 'game' && h(GameTab, { data, t }),
+          tab === 'quiz' && h(QuizTab, { data, t, tier }),
           tab === 'sim' && h(SimTab, { data, t }),
           tab === 'tech' && h(TechTab, { data, t, open }),
           tab === 'places' && h(PlacesTab, { data, t, open }),
@@ -3451,6 +3868,8 @@ window.__ModuleLoader__.load({
         dossierToMarkdown,
         timelineToMarkdown,
         pathToMarkdown,
+        tierFromProgress,
+        buildCards,
       },
       apply(ctx) {
         const locale = ctx.get('locale')

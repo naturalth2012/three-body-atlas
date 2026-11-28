@@ -892,6 +892,10 @@ export function bundle() {
     tech: TECH.map((t) => ({
       id: t.id, name: t.name, nameEn: t.nameEn, tier: t.tier, category: t.category,
       era: t.era, danger: t.danger, summary: t.summary,
+      // Without firstWork the client cannot derive a spoiler tier for a
+      // technology, so the quiz would only ever ask tech questions at the
+      // highest level. Carry it through.
+      firstWork: t.firstWork,
     })),
     glossary: GLOSSARY.map((g) => ({
       id: g.id, term: g.term, termEn: g.termEn || '', category: g.category, definition: g.definition,
