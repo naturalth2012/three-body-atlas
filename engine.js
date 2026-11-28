@@ -841,7 +841,7 @@ export function counts() {
     canonCount[bucket] = (canonCount[bucket] || 0) + 1
   }
   const eraCount = ERAS.map((era) => ({
-    id: era.id, name: era.name,
+    id: era.id, name: era.name, nameEn: era.nameEn,
     n: EVENTS.filter((e) => e.era === era.id).length,
   }))
   const tierCount = {}

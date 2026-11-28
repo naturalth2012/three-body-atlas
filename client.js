@@ -81,6 +81,9 @@ window.__ModuleLoader__.load({
       errorHint: '宿主端没有返回数据，插件可能刚重载。',
       retry: '重试',
       close: '关闭',
+      copyMarkdown: '复制为 Markdown',
+      copied: '已复制',
+      copyFailed: '复制失败',
 
       tabOverview: '概览',
       tabPlot: '剧情脉络',
@@ -350,6 +353,7 @@ window.__ModuleLoader__.load({
       back: 'Back to chat', loading: 'Unfolding the universe…',
       errorTitle: 'Failed to load', errorHint: 'No data from the host; the plugin may have just reloaded.',
       retry: 'Retry', close: 'Close',
+      copyMarkdown: 'Copy as Markdown', copied: 'Copied', copyFailed: 'Copy failed',
       tabOverview: 'Overview', tabPlot: 'Plot', tabCharacters: 'Cast', tabGraph: 'Relationship map',
       tabTimeline: 'Chronology', tabGame: 'Game', tabSim: 'Simulation', tabTech: 'Technology',
       tabPlaces: 'Places', tabLore: 'Glossary & quotes', tabThemes: 'Themes', tabDiff: 'Book vs screen',
@@ -654,6 +658,10 @@ window.__ModuleLoader__.load({
         .tba-drawer .tba-den{color:var(--dsw-alias-label-secondary);margin-bottom:14px;font-size:13px}
         .tba-drawer-close{float:right;appearance:none;border:0;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:16px}
         .tba-drawer-close:hover{background:var(--dsw-alias-bg-layer-2)}
+        /* Sits beside the close button; both float right so the copy control
+           never pushes the dossier title down. */
+        .tba-drawer-copy{float:right;appearance:none;border:0;margin-right:8px;padding:0 10px;height:32px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);border-radius:8px;cursor:pointer;font-size:12.5px;line-height:32px}
+        .tba-drawer-copy:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
         .tba-section{margin-top:20px}
         .tba-section h4{margin:0 0 9px;font-size:13.5px;font-weight:650;display:flex;align-items:center;gap:7px}
         .tba-section h4:before{content:'';width:3px;height:13px;border-radius:2px;background:var(--dsw-alias-brand-primary)}
@@ -959,9 +967,159 @@ window.__ModuleLoader__.load({
       return 'tba-badge tba-canon-book'
     }
 
+    /**
+     * Pick the field the active language should show.
+     *
+     * Eras and events carry an English name beside the Chinese one; every other
+     * entity already did. Reading `x.name` directly is what left the timeline
+     * entirely Chinese in an English UI, so the label goes through here.
+     * Chinese is the default and returns the original field unchanged.
+     */
+    const labelOf = (record, zhField, enField) => {
+      if (!record) return ''
+      const en = record[enField]
+      if (activeLang === 'en' && en) return en
+      return record[zhField] || en || ''
+    }
+    const eraLabel = (era) => labelOf(era, 'name', 'nameEn')
+    const eventLabel = (event) => labelOf(event, 'title', 'titleEn')
+
     /* ------------------------------------------------------------------ *
-     * Drawer — one dossier, four shapes
-     * ------------------------------------------------------------------ */
+     * Export — turn what the reader sees into Markdown they can take away
+     * ------------------------------------------------------------------ *
+     *
+     * These are pure functions on purpose: `__test__` exports them so the
+     * self-check can assert the output without a browser. Keep them free of
+     * DOM access, and keep them reading the *masked* payload — copying must not
+     * reveal what the spoiler tier hid.
+     */
+    const mdHeading = (level, text) => (text ? '#'.repeat(level) + ' ' + String(text).trim() + '\n\n' : '')
+    const mdLine = (label, value) => (value ? '**' + label + '**：' + String(value).trim() + '\n' : '')
+    const mdQuote = (text, speaker, source) => {
+      if (!text) return ''
+      const body = String(text).trim().split('\n').map((line) => '> ' + line).join('\n')
+      const tail = [speaker, source].filter(Boolean).join(' · ')
+      return body + (tail ? '\n>\n> —— ' + tail : '') + '\n\n'
+    }
+
+    /**
+     * One dossier as Markdown. `kind` picks the shape, exactly as the drawer does.
+     * A masked record still produces its title and a line saying why the rest is
+     * missing, so a copied file never silently looks complete.
+     */
+    const dossierToMarkdown = (kind, d, data) => {
+      if (!d) return ''
+      const name = d.name || d.term || d.title || ''
+      const nameEn = d.nameEn || d.termEn || ''
+      let out = mdHeading(1, name)
+      if (nameEn) out += mdLine('English', nameEn)
+      if (d.locked) {
+        out += '> 该条目按剧透层级遮蔽，仅显示概要。\n\n'
+        out += (d.summary || d.definition || '') + '\n'
+        return out
+      }
+      if (kind === 'character') {
+        if (d.alias && d.alias.length) out += mdLine('别名', d.alias.join('、'))
+        if (d.factionLabel) out += mdLine('阵营', d.factionLabel)
+        if (d.canon) out += mdLine('设定', d.canon)
+        if (d.firstWork) out += mdLine('首次出场', d.firstWork)
+        if (d.summary) out += '\n' + d.summary + '\n\n'
+        if (d.details) out += mdHeading(2, '详情') + d.details + '\n\n'
+        if (d.fate) out += mdHeading(2, '命运') + d.fate + '\n\n'
+        if (d.relations && d.relations.length) {
+          // A relation carries only the target id; resolve it so a copied file
+          // reads as prose rather than as a list of slugs. Fall back to the id
+          // when the target is outside the current dataset (a masked neighbour).
+          const nameOf = (relation) => {
+            if (relation.name) return relation.name
+            const id = relation.to
+            const list = (data && data.characters) || []
+            const hit = list.find((c) => c.id === id)
+            return (hit && hit.name) || id
+          }
+          out += mdHeading(2, '关系') + d.relations.map((r) => (
+            '- **' + nameOf(r) + '**' + (r.label ? '（' + r.label + '）' : '')
+          )).join('\n') + '\n\n'
+        }
+      } else if (kind === 'place') {
+        if (d.type) out += mdLine('类型', d.type)
+        if (d.region) out += mdLine('区域', d.region)
+        if (d.canon) out += mdLine('设定', d.canon)
+        if (d.summary) out += '\n' + d.summary + '\n\n'
+        if (d.desc) out += d.desc + '\n\n'
+        if (d.characters && d.characters.length) {
+          out += mdHeading(2, '相关人物') + d.characters.map((c) => '- ' + (c.name || c.id)).join('\n') + '\n\n'
+        }
+      } else if (kind === 'tech') {
+        if (d.category) out += mdLine('分类', d.category)
+        if (d.era) out += mdLine('纪元', d.era)
+        if (d.danger) out += mdLine('危险等级', d.danger)
+        if (d.summary) out += '\n' + d.summary + '\n\n'
+        if (d.desc) out += d.desc + '\n\n'
+      } else {
+        if (d.definition) out += '\n' + d.definition + '\n\n'
+        else if (d.summary) out += '\n' + d.summary + '\n\n'
+        if (d.desc) out += d.desc + '\n\n'
+      }
+      return out.trimEnd() + '\n'
+    }
+
+    /** A timeline slice as Markdown, grouped by era in the order given. */
+    const timelineToMarkdown = (events, eras) => {
+      if (!events || !events.length) return ''
+      const byEra = new Map()
+      for (const e of events) {
+        if (!byEra.has(e.era)) byEra.set(e.era, [])
+        byEra.get(e.era).push(e)
+      }
+      const order = (eras || []).map((x) => x.id)
+      const ids = [...byEra.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b))
+      let out = mdHeading(1, '三体 · 时间线')
+      for (const id of ids) {
+        const era = (eras || []).find((x) => x.id === id)
+        out += mdHeading(2, era ? eraLabel(era) : id)
+        for (const e of byEra.get(id)) {
+          out += '- **' + (e.year || '') + '**　' + eventLabel(e) + '\n'
+          if (e.desc) out += '  ' + e.desc + '\n'
+        }
+        out += '\n'
+      }
+      return out
+    }
+
+    /** A character's relationship path as one arrow chain. */
+    const pathToMarkdown = (from, to, hops) => {
+      if (!from || !to) return ''
+      const chain = [from].concat((hops || []).map((h) => (h && (h.name || h.to)) || ''), [to])
+      return mdHeading(1, '关系路径：' + from + ' → ' + to) + chain.join(' → ') + '\n'
+    }
+
+    /** Copy text, degrading through execCommand when the async API is missing. */
+    const copyText = async (text) => {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+          await navigator.clipboard.writeText(text)
+          return true
+        } catch {
+          // Fall through: some embeddings expose the API but deny the write.
+        }
+      }
+      try {
+        const area = document.createElement('textarea')
+        area.value = text
+        area.setAttribute('readonly', '')
+        area.style.position = 'fixed'
+        area.style.opacity = '0'
+        document.body.appendChild(area)
+        area.select()
+        const ok = document.execCommand('copy')
+        document.body.removeChild(area)
+        return ok
+      } catch {
+        return false
+      }
+    }
+
     const renderDossierBody = ({ kind, payload: d, data, t, onOpen, onReveal }) => {
       // A locked record keeps its title so the reader knows the entry exists,
       // but every long field was stripped by the engine. Say so plainly rather
@@ -1113,6 +1271,8 @@ window.__ModuleLoader__.load({
       // Per-dossier override: a reader may choose to see one entry in full
       // without lowering the ceiling for the whole app.
       const [revealed, setRevealed] = React.useState(false)
+      // 'ok' | 'fail' | null — transient feedback for the copy button.
+      const [copied, setCopied] = React.useState(null)
 
       React.useEffect(() => { setRevealed(false) }, [kind, id])
 
@@ -1155,6 +1315,19 @@ window.__ModuleLoader__.load({
           onClick: (e) => e.stopPropagation(),
         },
           h('button', { className: 'tba-drawer-close', onClick: onClose, 'aria-label': t('close') }, '×'),
+          payload && !failed ? h('button', {
+            className: 'tba-drawer-copy',
+            title: t('copyMarkdown'),
+            'aria-label': t('copyMarkdown'),
+            onClick: async (e) => {
+              e.stopPropagation()
+              // Copy what is on screen: a masked dossier stays masked in the
+              // export, so a copied file never looks more complete than the panel.
+              const ok = await copyText(dossierToMarkdown(kind, payload, data))
+              setCopied(ok ? 'ok' : 'fail')
+              setTimeout(() => setCopied(null), 1600)
+            },
+          }, copied === 'ok' ? t('copied') : copied === 'fail' ? t('copyFailed') : '⧉ ' + t('copyMarkdown')) : null,
           body))
     }
 
@@ -1163,7 +1336,7 @@ window.__ModuleLoader__.load({
      * ------------------------------------------------------------------ */
     const OverviewTab = ({ data, t, go, open }) => {
       const c = data.counts
-      const eraBar = h(Bar, { items: c.byEra.map((e) => ({ id: e.id, name: e.name, n: e.n })), total: Math.max(1, c.events) })
+      const eraBar = h(Bar, { items: c.byEra.map((e) => ({ id: e.id, name: labelOf(e, 'name', 'nameEn'), n: e.n })), total: Math.max(1, c.events) })
       const canonBar = h(Bar, {
         items: Object.entries(c.byCanon).filter(([, n]) => n).map(([name, n]) => ({ id: name, name, n })),
         total: c.characters,
@@ -1639,7 +1812,7 @@ window.__ModuleLoader__.load({
           key: e.id,
           className: 'tba-chip' + (era === e.id ? ' tba-on' : ''),
           onClick: () => setEra(e.id),
-        }, e.name)),
+        }, eraLabel(e))),
         h('button', {
           className: 'tba-chip' + (majorOnly ? ' tba-on' : ''),
           onClick: () => setMajorOnly((v) => !v),
@@ -1656,7 +1829,7 @@ window.__ModuleLoader__.load({
             h('span', { className: 'tba-age' }, e.eraName || e.era),
             h('span', { className: 'tba-year' }, e.year),
             major ? h('span', { className: 'tba-badge' }, '★ ' + t('simMajor')) : null),
-          h('h3', null, e.title),
+          h('h3', null, eventLabel(e)),
           h('p', null, e.desc),
           people ? h('div', { className: 'tba-people' }, '👥 ' + people) : null)
       })
@@ -1665,7 +1838,7 @@ window.__ModuleLoader__.load({
         h('p', { className: 'tba-kicker' }, t('timelineHint')),
         chips,
         eraInfo ? h('div', { className: 'tba-intro', style: { marginBottom: 14 } },
-          h('b', null, eraInfo.name + ' · ' + eraInfo.range), h('div', null, eraInfo.desc)) : null,
+          h('b', null, eraLabel(eraInfo) + ' · ' + eraInfo.range), h('div', null, eraInfo.desc)) : null,
         h('div', { className: 'tba-timeline' }, ...rows))
     }
 
@@ -3270,6 +3443,15 @@ window.__ModuleLoader__.load({
      * ------------------------------------------------------------------ */
     return {
       inject: ['slots'],
+      /* Pure helpers, exposed so the self-check can assert them in Node. The
+         panel never reads this; it exists because these functions have no DOM
+         dependency and testing them through a browser would be slower and
+         weaker than testing the strings they return. */
+      __test__: {
+        dossierToMarkdown,
+        timelineToMarkdown,
+        pathToMarkdown,
+      },
       apply(ctx) {
         const locale = ctx.get('locale')
         const currentMessages = () => (isEnglish(locale) ? EN : ZH)

@@ -111,6 +111,18 @@ for (const e of EVENTS) {
 }
 assert(badEventRef.length === 0, `事件引用全部合法${badEventRef.length ? '：' + badEventRef.slice(0, 8).join(',') : ''}`)
 
+// Every era must carry at least one event. A long era with a single entry reads
+// as "nothing happened here", which is exactly how the great trough looked
+// before it was filled out: 60 years of the trilogy's worst catastrophe, one row.
+{
+  const perEra = new Map()
+  for (const e of EVENTS) perEra.set(e.era, (perEra.get(e.era) || 0) + 1)
+  const empty = ERAS.filter((era) => !perEra.has(era.id)).map((era) => era.id)
+  assert(empty.length === 0, `每个纪元都有事件${empty.length ? '：空的 ' + empty.join(',') : ''}`)
+  const trough = perEra.get('great-trough') || 0
+  assert(trough >= 4, `大低谷有 ${trough} 个事件（期望 ≥4，它跨越 60 年）`)
+}
+
 const badPlot = []
 for (const p of PLOT) {
   if (!workIds.has(p.work)) badPlot.push(p.work)
@@ -1091,7 +1103,7 @@ if (fs.existsSync(entryPath) && fs.existsSync(submitPath)) {
       ['characters', 56, charsData.length],
       ['relations', 247, charsData.reduce((n, c) => n + ((c.relations || []).length), 0)],
       ['plot beats', 46, (plotData.PLOT || []).reduce((n, w) => n + ((w.beats || []).length), 0)],
-      ['events', 52, (tlData.EVENTS || []).length],
+      ['events', 56, (tlData.EVENTS || []).length],
       ['eras', 10, (tlData.ERAS || []).length],
       ['technologies', 24, loreData.TECH.length],
       ['places', 19, loreData.PLACES.length],
@@ -1129,7 +1141,12 @@ assert(client.includes("'sidebar.panellist'"), 'client.js 注册 sidebar.panelli
 assert(client.includes("name: 'main'"), 'client.js 注册 main 槽位')
 assert(client.includes('ctx.effect('), 'client.js 在 ctx.effect 里注册样式与语言包')
 assert(!/import\s+.*@deepseek-ai\/dsh-client-ui/.test(client), 'client.js 不 import 宿主 Client 包')
-assert(!/document\.body\.appendChild/.test(client), 'client.js 不向 body 追加第二个应用')
+// The rule is "one app, one mount point". A transient textarea for the
+// clipboard fallback is not a second application, so the assertion targets the
+// mount patterns rather than the method name — otherwise the copy button could
+// not degrade on a host that denies navigator.clipboard.
+assert(!/createRoot\(|\.render\(\s*h\(/.test(client), 'client.js 不自建 React 根（不追加第二个应用）')
+assert(!/appendChild\([^)]*root|appendChild\([^)]*app/i.test(client), 'client.js 不追加第二个应用根节点')
 assert(!/dangerouslySetInnerHTML|innerHTML\s*=/.test(client), 'client.js 不注入 HTML（答案渲染是元素树）')
 
 // UI regressions found in review.
@@ -1147,6 +1164,109 @@ assert(/liveFrames\.length - 1\s*\n?\s*:\s*Math\.min\(frame/.test(client) || /tr
 assert(!/const VIEW = 20/.test(client), '渲染不再把固定 20 单位盒子映射到画布')
 assert(/fitScale/.test(client) && /toSvgX/.test(client), '渲染按数据范围自动取景')
 assert(/role: 'dialog'/.test(client), '档案抽屉有 dialog 语义')
+
+console.log('\n## 导出为 Markdown')
+// The panel is read-only by design; copying is the one way a reader takes
+// something away. These assertions run the real builders through the module
+// factory, so a change to the panel cannot silently break the export.
+{
+  const vm = await import('node:vm')
+  let captured
+  const sandbox = {
+    window: { __ModuleLoader__: { load(entry) { captured = entry } } },
+    console, setTimeout, clearTimeout,
+  }
+  sandbox.globalThis = sandbox
+  const reactStub = new Proxy({}, { get: () => () => null })
+  vm.createContext(sandbox)
+  vm.runInContext(client, sandbox, { filename: 'client.js' })
+  assert(captured !== undefined, 'client.js 能在沙箱里注册（导出测试的前提）')
+
+  const mod = captured.factory((name) => (name === 'react' ? reactStub : undefined))
+  const T = mod.__test__
+  assert(T && typeof T.dossierToMarkdown === 'function', 'client.js 导出 dossierToMarkdown 供测试')
+
+  // The panel receives the bundle shape; passing module exports instead is the
+  // exact mistake that once made every relation render as a slug.
+  const bundle = { characters: D.CHARACTERS, eras: D.ERAS, factions: D.FACTIONS }
+  const luo = D.CHARACTER_BY_ID['luo-ji']
+  const md = T.dossierToMarkdown('character', luo, bundle)
+
+  assert(md.startsWith('# 罗辑'), '人物 Markdown 以一级标题开头')
+  assert(md.includes('## 详情') && md.includes('## 命运'), '人物 Markdown 含详情与命运段')
+  assert(md.includes('## 关系'), '人物 Markdown 含关系段')
+  // Resolved names, not ids: a copied file must read as prose.
+  assert(md.includes('**庄颜**') && !md.includes('**zhuang-yan**'), '关系输出人名而不是 id')
+  assert(md.split('\n').every((line) => !/^\s*undefined\s*$/.test(line)), 'Markdown 不含 undefined 行')
+
+  // A masked record must say so rather than look complete.
+  const masked = T.dossierToMarkdown('character', { name: '遮蔽条目', locked: true, summary: '概要', tier: 3 }, bundle)
+  assert(/剧透层级遮蔽/.test(masked), '遮蔽条目的导出写明被遮蔽')
+  assert(!/## 详情/.test(masked), '遮蔽条目不导出被剥掉的正文')
+
+  // Other dossier shapes must not crash on their own fields.
+  for (const [kind, id] of [['place', 'trisolaris'], ['tech', 'sophon'], ['glossary', 'dark-forest']]) {
+    const record = (kind === 'place' ? D.PLACE_BY_ID : kind === 'tech' ? D.TECH_BY_ID : D.GLOSSARY_BY_ID)[id]
+    const out = T.dossierToMarkdown(kind, record, bundle)
+    assert(out.length > 20 && out.startsWith('# '), `${kind} 档案也能导出为 Markdown`)
+  }
+
+  // Timeline: grouped by era, ordered by the ERAS list rather than by input order.
+  const trough = D.EVENTS.filter((e) => e.era === 'great-trough')
+  const tl = T.timelineToMarkdown(trough, D.ERAS)
+  assert(tl.startsWith('# 三体 · 时间线'), '时间线 Markdown 有标题')
+  assert(/## 大低谷/.test(tl), '时间线 Markdown 按纪元分组')
+  assert(tl.split('\n').filter((l) => /^- \*\*/.test(l)).length === trough.length,
+    '时间线 Markdown 的条目数与事件数一致')
+
+  // Clipboard must degrade: a host that denies the async API still needs a path.
+  assert(/navigator\.clipboard/.test(client) && /execCommand\('copy'\)/.test(client),
+    '剪贴板有 execCommand 降级路径')
+  assert(/copyMarkdown/.test(client) && /tba-drawer-copy/.test(client), '档案抽屉有复制入口')
+}
+
+console.log('\n## 纪元与事件的英文名')
+// The timeline was the one screen that stayed entirely Chinese in an English UI:
+// eras and events had no English name, so the filters and the list were unreadable.
+// Adding the fields is half the job — the render sites must actually use them.
+{
+  const CJK = /[\u4e00-\u9fa5]/
+  const missingEra = D.ERAS.filter((e) => !e.nameEn || CJK.test(e.nameEn))
+  assert(missingEra.length === 0,
+    `每个纪元都有英文名${missingEra.length ? '：缺 ' + missingEra.map((e) => e.id).join(',') : ''}`)
+  const missingEvent = D.EVENTS.filter((e) => !e.titleEn || CJK.test(e.titleEn))
+  assert(missingEvent.length === 0,
+    `每个事件都有英文标题${missingEvent.length ? '：缺 ' + missingEvent.map((e) => e.id).join(',') : ''}`)
+
+  // The names must be the English editions' renderings where those exist.
+  const greatRavine = D.ERAS.find((e) => e.id === 'great-trough')
+  assert(greatRavine.nameEn === 'Great Ravine',
+    '大低谷用英译本定译 Great Ravine，而不是自造的 Great Trough')
+
+  // Wiring: a bare `era.name` / `e.title` in the timeline is the bug this fixed.
+  assert(/const labelOf = \(record, zhField, enField\)/.test(client), 'client.js 有统一的 label 选择函数')
+  assert(/const eraLabel = \(era\) => labelOf\(era, 'name', 'nameEn'\)/.test(client), '纪元名走 eraLabel')
+  assert(/const eventLabel = \(event\) => labelOf\(event, 'title', 'titleEn'\)/.test(client), '事件标题走 eventLabel')
+  // The three surfaces that showed these strings.
+  assert(/}, eraLabel\(e\)\)\)/.test(client), '时间线纪元筛选按钮用 eraLabel')
+  assert(/h\('h3', null, eventLabel\(e\)\)/.test(client), '时间线事件标题用 eventLabel')
+  assert(/eraLabel\(eraInfo\) \+ ' · ' \+ eraInfo\.range/.test(client), '纪元详情用 eraLabel')
+  assert(/name: labelOf\(e, 'name', 'nameEn'\)/.test(client), '概览的纪元分布条用 labelOf')
+  // A bare field read anywhere in the timeline means the wiring was missed.
+  assert(!/eraInfo\.name \+/.test(client), '没有残留的裸 eraInfo.name')
+  assert(!/h\('h3', null, e\.title\)/.test(client), '没有残留的裸事件标题')
+
+  // The counts payload has to carry the English name too, or the overview bar
+  // would still be Chinese even though the era records have it.
+  const counts = E.counts()
+  const eraRow = counts.byEra.find((e) => e.id === 'great-trough')
+  assert(eraRow && eraRow.nameEn === 'Great Ravine', 'counts.byEra 带上 nameEn')
+
+  // Chinese must be untouched: labelOf returns the original field.
+  const eraZh = D.ERAS.find((e) => e.id === 'great-trough')
+  assert(eraZh.name === '大低谷', '中文纪元名未被改动')
+  assert(D.EVENTS.filter((e) => CJK.test(e.title)).length === D.EVENTS.length, '中文事件标题未被改动')
+}
 assert(/aria-selected/.test(client), '标签页有 aria-selected')
 assert(/graphZoomIn/.test(client), '图谱有非手势的缩放按钮')
 // Every entity group the Host returns must be reachable from the cast search.
