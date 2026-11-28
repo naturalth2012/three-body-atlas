@@ -1020,8 +1020,10 @@ window.__ModuleLoader__.load({
       // filtering the payload. Derive it from the works a record appears in so a
       // tier-1 reader is not quizzed on Death's End characters.
       const tierOfRecord = (record) => {
-        const own = Number(record && record.tier)
-        if (Number.isFinite(own)) return own
+        // Only a numeric `tier` counts as a spoiler level. `tech.tier` is a
+        // display category ("三体" / "地球"), a different field with the same
+        // name — coercing it would silently give every technology a bogus tier.
+        if (record && typeof record.tier === 'number' && Number.isFinite(record.tier)) return record.tier
         // Glossary entries are keyed separately: they belong to no single work.
         const g = record && GLOSSARY_TIER[record.id]
         if (Number.isFinite(g) && (record.definition || record.term)) return g
@@ -1060,7 +1062,11 @@ window.__ModuleLoader__.load({
       }
       const stripName = (text, name) => {
         if (!text || !name) return text || ''
-        return String(text).split(name).join('＿＿')
+        // Replace with a length-matched blank rather than a fixed '＿＿': a fixed
+        // two-character gap tells the reader how long the answer is, and the
+        // underscores themselves read as a fill-in-the-blank leftover.
+        const blank = '某'.repeat(Math.min(4, String(name).length))
+        return String(text).split(name).join(blank)
       }
 
       const push = (kind, pool, record, answerField, stemField, groupKey) => {
@@ -1070,9 +1076,12 @@ window.__ModuleLoader__.load({
         if (!answer || !rawStem) return
         const stem = stripName(rawStem, answer)
         // Too short after stripping means the name was most of the sentence.
-        if (stem.replace(/＿/g, '').trim().length < 15) return
+        if (stem.replace(/某/g, '').trim().length < 15) return
         const group = groupKey ? record[groupKey] : undefined
-        const others = pool.filter((x) => x[answerField] && x[answerField] !== answer)
+        // Distractors must obey the same ceiling as the answer. Filtering only
+        // the answer let a tier-1 reader see 程心 offered as an option, which
+        // defeats the spoiler guard on the one screen that is supposed to teach.
+        const others = pool.filter((x) => x[answerField] && x[answerField] !== answer && tierOk(x))
         const same = group ? others.filter((x) => x[groupKey] === group) : []
         const rest = others.filter((x) => !same.includes(x))
         // Same-group options are plausible; a wholly random third option can be
@@ -1091,7 +1100,13 @@ window.__ModuleLoader__.load({
           }
         }
         if (picks.length < 3) return
-        const options = seeded(picks.concat([answer]), answer.length + 29)
+        // Seed from the record's own id, not just the answer's length: seeding
+        // by length alone made the correct option's position a function of how
+        // many characters it had, so a reader could win by counting strokes.
+        let h = 0
+        const key = String(record.id || answer)
+        for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) & 0x7fffffff
+        const options = seeded(picks.concat([answer]), h + 29)
         cards.push({
           kind,
           id: record.id,
@@ -1231,11 +1246,21 @@ window.__ModuleLoader__.load({
      * Spoiler tier of a work, mirrored from data/spoiler.js.
      *
      * Duplicated rather than imported because the client bundle has no module
-     * system for the data package. Only the three books the progress control
-     * tracks are needed; `three-body-x` and the adaptations map to the same
-     * numbers upstream and are not read here.
+     * system for the data package. All eight works are mirrored, not just the
+     * books: leaving out the adaptations made 章北海 come out as tier 2 here
+     * while the server calls him tier 3, so the drawer would mask him at the
+     * same level the quiz still asked about him.
      */
-    const WORK_TIER = { 'ball-lightning': 0, 'three-body': 1, 'dark-forest': 2, 'deaths-end': 3 }
+    const WORK_TIER = {
+      'ball-lightning': 0,
+      'three-body': 1,
+      'dark-forest': 2,
+      'deaths-end': 3,
+      'three-body-x': 3,
+      'tencent-series': 1,
+      'netflix-series': 3,
+      'my-three-body': 3,
+    }
     const tierOfWork = (id) => (Object.prototype.hasOwnProperty.call(WORK_TIER, id) ? WORK_TIER[id] : undefined)
 
     /**
@@ -1328,7 +1353,7 @@ window.__ModuleLoader__.load({
         if (d.alias && d.alias.length) out += mdLine('别名', d.alias.join('、'))
         if (d.factionLabel) out += mdLine('阵营', d.factionLabel)
         if (d.canon) out += mdLine('设定', d.canon)
-        if (d.firstWork) out += mdLine('首次出场', d.firstWork)
+        if (d.firstWork) out += mdLine('首次出场', d.firstWorkTitle || d.firstWork)
         if (d.summary) out += '\n' + d.summary + '\n\n'
         if (d.details) out += mdHeading(2, '详情') + d.details + '\n\n'
         if (d.fate) out += mdHeading(2, '命运') + d.fate + '\n\n'
@@ -1393,11 +1418,25 @@ window.__ModuleLoader__.load({
       return out
     }
 
-    /** A character's relationship path as one arrow chain. */
+    /**
+     * A character's relationship path as one arrow chain.
+     *
+     * engine.relationPath() returns steps shaped `{ from, to, label }`, and a
+     * separate `people` array of names. Both used to produce a duplicated chain
+     * (「叶文洁 → 罗辑 → 罗辑」) because the builder assumed each hop carried the
+     * *next* name. Build the sequence from the hop list instead, de-duplicating
+     * consecutive repeats, and fall back to plain from→to when the shape is
+     * something else.
+     */
     const pathToMarkdown = (from, to, hops) => {
       if (!from || !to) return ''
-      const chain = [from].concat((hops || []).map((h) => (h && (h.name || h.to)) || ''), [to])
-      return mdHeading(1, '关系路径：' + from + ' → ' + to) + chain.join(' → ') + '\n'
+      const names = [from]
+      for (const hop of hops || []) {
+        const next = hop && (hop.to || hop.name)
+        if (next && next !== names[names.length - 1]) names.push(next)
+      }
+      if (names[names.length - 1] !== to) names.push(to)
+      return mdHeading(1, '关系路径：' + from + ' → ' + to) + names.join(' → ') + '\n'
     }
 
     /** Copy text, degrading through execCommand when the async API is missing. */
@@ -1410,19 +1449,22 @@ window.__ModuleLoader__.load({
           // Fall through: some embeddings expose the API but deny the write.
         }
       }
+      let area = null
       try {
-        const area = document.createElement('textarea')
+        area = document.createElement('textarea')
         area.value = text
         area.setAttribute('readonly', '')
         area.style.position = 'fixed'
         area.style.opacity = '0'
         document.body.appendChild(area)
         area.select()
-        const ok = document.execCommand('copy')
-        document.body.removeChild(area)
-        return ok
+        return document.execCommand('copy')
       } catch {
         return false
+      } finally {
+        // execCommand can throw; without this the textarea would stay in the
+        // body and accumulate a stray node on every failed attempt.
+        if (area && area.parentNode) area.parentNode.removeChild(area)
       }
     }
 
@@ -3729,36 +3771,10 @@ window.__ModuleLoader__.load({
       const [error, setError] = React.useState(false)
       const [tab, setTab] = React.useState('overview')
       const [drawer, setDrawer] = React.useState(null)
-      // Default to "everything visible": a first-time reader should not meet a
-      // wall of locks. The picker narrows it, and the choice is remembered.
-      //
-      // Reading progress, when recorded, supplies the ceiling instead — but a
-      // manual pick wins from then on, because a control that silently undoes
-      // the reader's last action is worse than no automation at all.
-      const [tier, setTierState] = React.useState(() => {
-        const manual = readPref(PREF_TIER_MANUAL, '')
-        if (manual === '1') {
-          const raw = readPref(PREF_TIER, '3')
-          const n = Number(raw)
-          return Number.isFinite(n) ? Math.min(3, Math.max(0, n)) : 3
-        }
-        const raw = readPref(PREF_TIER, '3')
-        const n = Number(raw)
-        return Number.isFinite(n) ? Math.min(3, Math.max(0, n)) : 3
-      })
-      const setTier = (value) => {
-        setTierState(value)
-        writePref(PREF_TIER, value)
-        // A pick is a decision: stop letting progress override it.
-        writePref(PREF_TIER_MANUAL, '1')
-      }
-      const followProgress = (derived) => {
-        if (derived === null) return
-        writePref(PREF_TIER_MANUAL, '0')
-        setTierState(derived)
-        writePref(PREF_TIER, derived)
-      }
-
+      // Reading progress has to be read before the ceiling, because a reader who
+      // has never touched the picker should get a ceiling derived from where
+      // they actually are. Declaring progress after tier made that impossible
+      // and left "automatic spoilers" working only until the next reload.
       const [progress, setProgress] = React.useState(() => {
         try {
           const raw = readPref(PREF_PROGRESS, '{}')
@@ -3769,6 +3785,33 @@ window.__ModuleLoader__.load({
         }
       })
       const [manual, setManual] = React.useState(() => readPref(PREF_TIER_MANUAL, '0') === '1')
+      // Default to "everything visible": a first-time reader should not meet a
+      // wall of locks. The picker narrows it, and the choice is remembered.
+      //
+      // Reading progress, when recorded, supplies the ceiling instead — but a
+      // manual pick wins from then on, because a control that silently undoes
+      // the reader's last action is worse than no automation at all.
+      const [tier, setTierState] = React.useState(() => {
+        const stored = Number(readPref(PREF_TIER, '3'))
+        const remembered = Number.isFinite(stored) ? Math.min(3, Math.max(0, stored)) : 3
+        if (readPref(PREF_TIER_MANUAL, '0') === '1') return remembered
+        const derived = tierFromProgress(progress)
+        return derived === null ? remembered : derived
+      })
+      const setTier = (value) => {
+        setTierState(value)
+        writePref(PREF_TIER, value)
+        // A pick is a decision: stop letting progress override it, and say so.
+        writePref(PREF_TIER_MANUAL, '1')
+        setManual(true)
+      }
+      const followProgress = (derived) => {
+        writePref(PREF_TIER_MANUAL, '0')
+        setManual(false)
+        if (derived === null) return
+        setTierState(derived)
+        writePref(PREF_TIER, derived)
+      }
 
       const load = () => {
         setError(false); setData(null)

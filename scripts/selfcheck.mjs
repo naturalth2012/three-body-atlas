@@ -1412,6 +1412,7 @@ console.log('\n## 闪卡自测')
 // four distinct options, the answer among them, and the spoiler ceiling respected.
 {
   const vm = await import('node:vm')
+  const spoilerForTier = await import('../data/spoiler.js')
   let captured
   const sandbox = {
     window: { __ModuleLoader__: { load(entry) { captured = entry } } },
@@ -1456,6 +1457,30 @@ console.log('\n## 闪卡自测')
   const leaked = low.filter((c) => c.kind === 'character' && deathsEndNames.has(c.answer))
   assert(leaked.length === 0,
     `层级 1 不考第三部人物${leaked.length ? '：' + leaked.slice(0, 3).map((c) => c.answer).join(',') : ''}`)
+
+  // The ceiling has to cover the distractors too. Checking only `answer` was a
+  // false pass: at tier 1, 18 of 35 cards still offered later-book names as
+  // options, which defeats the guard on the one screen meant to teach.
+  const tierMap = new Map((D.CHARACTERS || []).map((c) => [c.name, c]))
+  const tierOfName = (name) => {
+    const c = tierMap.get(name)
+    if (!c) return null
+    const ids = Object.keys(c.works || {})
+    if (c.firstWork) ids.push(c.firstWork)
+    let max = null
+    for (const id of ids) {
+      const t = spoilerForTier.WORK_TIER[id]
+      if (t !== undefined && (max === null || t > max)) max = t
+    }
+    return max
+  }
+  for (const cap of [0, 1, 2]) {
+    const cards = T.buildCards(bundle, cap)
+    const over = cards.filter((c) => c.kind === 'character' &&
+      c.options.some((o) => { const t = tierOfName(o); return t !== null && t > cap }))
+    assert(over.length === 0,
+      `层级 ${cap} 的选项也不越层${over.length ? '：' + over.slice(0, 3).map((c) => c.answer).join(',') : ''}`)
+  }
 
   // Every level must be a strict subset of the next, or a reader who lowers the
   // ceiling would see questions appear rather than disappear.
@@ -1530,11 +1555,19 @@ console.log('\n## 闪卡自测')
 
   const mirroredWork = grabLiteral('WORK_TIER')
   assert(mirroredWork !== null, 'client.js 有 WORK_TIER 镜像表')
-  // Only the four books the progress control and the quiz actually use.
-  const driftWork = ['ball-lightning', 'three-body', 'dark-forest', 'deaths-end']
-    .filter((k) => mirroredWork[k] !== spoiler.WORK_TIER[k])
+  // Compare all eight works, in both directions. The earlier version only
+  // checked the four keys the client happened to have, so the adaptations were
+  // missing from the mirror and the assertion could never notice — which is
+  // exactly how 章北海 ended up tier 2 on the client and tier 3 on the server.
+  const driftWork = Object.keys(spoiler.WORK_TIER).filter((k) => mirroredWork[k] !== spoiler.WORK_TIER[k])
   assert(driftWork.length === 0,
     `WORK_TIER 与 data/spoiler.js 一致${driftWork.length ? '：漂移 ' + driftWork.join(',') : ''}`)
+  const missingWork = Object.keys(spoiler.WORK_TIER).filter((k) => mirroredWork[k] === undefined)
+  assert(missingWork.length === 0,
+    `WORK_TIER 镜像完整${missingWork.length ? '：缺 ' + missingWork.join(',') : ''}`)
+  const extraWork = Object.keys(mirroredWork).filter((k) => spoiler.WORK_TIER[k] === undefined)
+  assert(extraWork.length === 0,
+    `WORK_TIER 没有多余条目${extraWork.length ? '：' + extraWork.join(',') : ''}`)
 
   // Determinism: the same data must build the same quiz, or tests cannot pin it.
   const again = T.buildCards(bundle, 3)

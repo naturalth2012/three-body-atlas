@@ -596,7 +596,7 @@ export const CHARACTERS = [
     id: 'wu-yue',
     name: '吴岳',
     nameEn: 'Wu Yue',
-    alias: ['自然选择号首任舰长'],
+    alias: ['自然选择号舰长'],
     faction: 'fleet',
     factionLabel: '舰队国际',
     kind: '配角',
