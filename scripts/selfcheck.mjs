@@ -1467,6 +1467,42 @@ console.log('\n## 闪卡自测')
   const tierZero = T.buildCards(bundle, 0)
   assert(tierZero.length < 5, `层级 0 只出前史题目（${tierZero.length} 张）`)
 
+  // The client mirrors two tier tables from data/spoiler.js because the bundle
+  // has no module system for the data package. Mirrors drift — this one did,
+  // missing ten glossary terms. Compare them mechanically so it cannot happen
+  // again silently.
+  const spoiler = await import('../data/spoiler.js')
+  const grabLiteral = (name) => {
+    const at = client.indexOf('const ' + name + ' = {')
+    if (at === -1) return null
+    let depth = 0
+    for (let i = at; i < client.length; i++) {
+      if (client[i] === '{') depth++
+      else if (client[i] === '}') {
+        depth--
+        if (depth === 0) return new Function('return (' + client.slice(client.indexOf('{', at), i + 1) + ')')()
+      }
+    }
+    return null
+  }
+  const mirroredGlossary = grabLiteral('GLOSSARY_TIER')
+  assert(mirroredGlossary !== null, 'client.js 有 GLOSSARY_TIER 镜像表')
+  const upstreamGlossary = spoiler.GLOSSARY_TIER
+  const driftKeys = Object.keys(upstreamGlossary).filter((k) => mirroredGlossary[k] !== upstreamGlossary[k])
+  const extraKeys = Object.keys(mirroredGlossary).filter((k) => upstreamGlossary[k] === undefined)
+  assert(driftKeys.length === 0,
+    `GLOSSARY_TIER 与 data/spoiler.js 一致${driftKeys.length ? '：漂移 ' + driftKeys.join(',') : ''}`)
+  assert(extraKeys.length === 0,
+    `GLOSSARY_TIER 没有多余条目${extraKeys.length ? '：' + extraKeys.join(',') : ''}`)
+
+  const mirroredWork = grabLiteral('WORK_TIER')
+  assert(mirroredWork !== null, 'client.js 有 WORK_TIER 镜像表')
+  // Only the four books the progress control and the quiz actually use.
+  const driftWork = ['ball-lightning', 'three-body', 'dark-forest', 'deaths-end']
+    .filter((k) => mirroredWork[k] !== spoiler.WORK_TIER[k])
+  assert(driftWork.length === 0,
+    `WORK_TIER 与 data/spoiler.js 一致${driftWork.length ? '：漂移 ' + driftWork.join(',') : ''}`)
+
   // Determinism: the same data must build the same quiz, or tests cannot pin it.
   const again = T.buildCards(bundle, 3)
   assert(JSON.stringify(again) === JSON.stringify(all), '相同输入生成相同的题（可复现）')

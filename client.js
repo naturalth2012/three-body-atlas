@@ -1246,6 +1246,13 @@ window.__ModuleLoader__.load({
       'bunker-plan': 3, 'black-domain-plan': 3, 'deterrence-era': 3, 'great-trough': 2,
       'beyond-time': 3, 'broadcast-era': 3, 'bunker-era': 3, 'sophon-blockade': 1,
       'human-computer-term': 1, 'thought-print-term': 2,
+      // The first-book and late-book terms that were missing on the first pass;
+      // a selfcheck now compares this table against data/spoiler.js so the two
+      // cannot drift apart again.
+      'three-body-problem': 1, 'triple-sun': 1, 'chaotic-era': 1,
+      'dehydration-term': 1, 'trisolaran-civilization': 1,
+      'light-speed-ship-term': 3, 'four-dim-space-term': 3,
+      'singer-civilization': 3, zeroers: 3, 'pastoral-era': 3,
     }
 
     /**
