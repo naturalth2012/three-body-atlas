@@ -208,7 +208,13 @@ assert(E.bundle().quotes.every((q) => q.workTitle && q.workTitle.startsWith('《
 assert(Boolean(E.characterDetail('luo-ji')), 'characterDetail 按 id 命中')
 assert(Boolean(E.techDetail('水滴')), 'techDetail 命中「水滴」')
 assert(Boolean(E.glossaryDetail('黑暗森林')), 'glossaryDetail 命中「黑暗森林」')
-assert(E.searchCharacters('', { faction: 'hobbit' }).length === 0 || true, 'searchCharacters 支持阵营筛选')
+// A faction filter must actually filter: an unknown faction yields nobody, and a
+// real one yields only its members. The old assertion ended in `|| true`, which
+// passed unconditionally.
+assert(E.searchCharacters('', { faction: 'hobbit' }).length === 0, '未知阵营筛选返回空')
+const fleetOnly = E.searchCharacters('', { faction: 'fleet' })
+assert(fleetOnly.length > 0, '已知阵营筛选有结果')
+assert(fleetOnly.every((c) => c.faction === 'fleet'), '阵营筛选结果全部属于该阵营')
 
 const path1 = E.relationPath('叶文洁', '罗辑')
 assert(path1.ok && path1.hops > 0, `叶文洁 → 罗辑 关系路径 ${path1.hops} 跳`)
@@ -1388,7 +1394,7 @@ console.log('\n## 阅读进度与自动剧透')
   assert(/PREF_TIER_MANUAL/.test(client), '存在手动优先的偏好键')
   assert(/writePref\(PREF_TIER_MANUAL, '1'\)/.test(client), '手动调整层级时记下手动标记')
   assert(/writePref\(PREF_TIER_MANUAL, '0'\)/.test(client), '跟随进度时清除手动标记')
-  assert(/manual \? h\('span'/.test(client) || /manual \?/.test(client), '手动模式下界面给出提示')
+  assert(/manual \? h\('span', \{ className: 'tba-progress-note' \}/.test(client), '手动模式下界面给出提示')
 
   // Progress must stay local: no network call may carry it.
   assert(!/fetch\([^)]*progress/i.test(client), '阅读进度不发网络请求')
@@ -1466,6 +1472,33 @@ console.log('\n## 闪卡自测')
   // A record with no derivable tier must not slip past the ceiling.
   const tierZero = T.buildCards(bundle, 0)
   assert(tierZero.length < 5, `层级 0 只出前史题目（${tierZero.length} 张）`)
+
+  // Game avatars are VR projections, not people. Asking "who is this" with
+  // 秦始皇 as an option beside 汪淼 is nonsense, so they must not appear at all.
+  const avatarNames = new Set((D.CHARACTERS || []).filter((c) => c.kind === '游戏投影').map((c) => c.name))
+  assert(avatarNames.size > 0, '数据里确实有游戏投影条目（否则这条断言无意义）')
+  const avatarLeak = all.filter((c) => c.kind === 'character' &&
+    (avatarNames.has(c.answer) || c.options.some((o) => avatarNames.has(o))))
+  assert(avatarLeak.length === 0,
+    `游戏投影不作为人物题答案或干扰项${avatarLeak.length ? '：' + avatarLeak.slice(0, 3).map((c) => c.answer).join(',') : ''}`)
+
+  // Distractors should mostly come from the same faction, or the wrong answers
+  // are absurd enough to guess by elimination. Allow one widening per card.
+  const charCards = all.filter((c) => c.kind === 'character')
+  const byName = new Map((D.CHARACTERS || []).map((c) => [c.name, c]))
+  let sameFaction = 0
+  let totalDistractors = 0
+  for (const c of charCards) {
+    const answerFaction = (byName.get(c.answer) || {}).faction
+    for (const o of c.options) {
+      if (o === c.answer) continue
+      totalDistractors++
+      if ((byName.get(o) || {}).faction === answerFaction) sameFaction++
+    }
+  }
+  const ratio = totalDistractors ? sameFaction / totalDistractors : 0
+  assert(ratio > 0.5,
+    `人物题的干扰项多数同阵营（${Math.round(ratio * 100)}%，避免荒谬选项）`)
 
   // The client mirrors two tier tables from data/spoiler.js because the bundle
   // has no module system for the data package. Mirrors drift — this one did,

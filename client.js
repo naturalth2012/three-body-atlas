@@ -1075,16 +1075,20 @@ window.__ModuleLoader__.load({
         const others = pool.filter((x) => x[answerField] && x[answerField] !== answer)
         const same = group ? others.filter((x) => x[groupKey] === group) : []
         const rest = others.filter((x) => !same.includes(x))
-        // Half plausible, half random: same-group only would be solvable by
-        // elimination, all-random would be trivially easy.
+        // Same-group options are plausible; a wholly random third option can be
+        // absurd (「秦始皇」 beside 汪淼). Take up to three from the same group
+        // and only widen when the group is too small — a smaller faction is a
+        // better trade than a joke option.
         const picks = []
         for (const candidate of seeded(same, answer.length + 7)) {
-          if (picks.length >= 2) break
+          if (picks.length >= 3) break
           picks.push(candidate[answerField])
         }
-        for (const candidate of seeded(rest, answer.length + 13)) {
-          if (picks.length >= 3) break
-          if (!picks.includes(candidate[answerField])) picks.push(candidate[answerField])
+        if (picks.length < 3) {
+          for (const candidate of seeded(rest, answer.length + 13)) {
+            if (picks.length >= 3) break
+            if (!picks.includes(candidate[answerField])) picks.push(candidate[answerField])
+          }
         }
         if (picks.length < 3) return
         const options = seeded(picks.concat([answer]), answer.length + 29)
@@ -1100,7 +1104,12 @@ window.__ModuleLoader__.load({
       }
 
       for (const c of data.characters || []) {
-        push('character', data.characters || [], c, 'name', 'summary', 'faction')
+        // Game avatars (秦始皇, 牛顿…) are projections inside the Three-Body VR
+        // game, not people in the story. Asking "who is this" with one of them
+        // as the answer — or as a distractor beside a real person — is nonsense.
+        if (c.kind === '游戏投影') continue
+        push('character', (data.characters || []).filter((x) => x.kind !== '游戏投影'),
+          c, 'name', 'summary', 'faction')
       }
       for (const g of data.glossary || []) {
         push('glossary', data.glossary || [], g, 'term', 'definition', 'category')
